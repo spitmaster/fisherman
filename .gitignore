@@ -1,0 +1,81 @@
+# 依赖包目录
+venv/
+.venv/
+env/
+ENV/
+
+# 编译生成的文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 数据文件
+data/*.csv
+data/*.json
+
+# 日志文件
+logs/
+*.log
+
+# 模型文件
+*.pt
+*.pth
+*.onnx
+
+# 运行结果
+runs/
+
+# 临时文件
+*.tmp
+*.temp
+.temp/
+.tmp/
+
+# 编辑器配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+Thumbs.db
+.DS_Store
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 测试文件
+.pytest_cache/
+coverage.xml
+
+# 构建文件
+build/
+dist/
+*.egg-info/
+
+# 文档构建
+*.pdf
+*.html
+
+# Windows 文件
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+
+# macOS 文件
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux 文件
+*~
+
+# 项目特定文件
+# 训练数据（如果用户提供的标注数据较大）
+train_data/
+val_data/

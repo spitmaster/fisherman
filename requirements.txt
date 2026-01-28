@@ -1,0 +1,9 @@
+ultralytics
+opencv-python
+mss
+numpy
+pandas
+pytest
+albumentations
+matplotlib
+PyQt5
