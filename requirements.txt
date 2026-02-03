@@ -1,0 +1,12 @@
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+pyautogui>=0.9.54
+mss>=9.0.1
+pygetwindow>=0.0.9
+pillow>=10.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+pyinstaller>=6.0.0
+matplotlib>=3.7.0  # 用于可视化
+torch>=2.0.0  # 如果使用GPU，请使用相应版本
+torchvision>=0.15.0
