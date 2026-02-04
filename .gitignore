@@ -1,0 +1,48 @@
+# 依赖目录
+node_modules/
+
+# 构建输出
+dist/
+build/
+
+# 日志文件
+*.log
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 测试相关
+/coverage
+
+# Python缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 数据库文件
+fisherman.db
+
+# 安装脚本
+install_vcredist.bat
+
+# PyInstaller生成的文件
+Fisherman.spec
+
+# 其他
+*.tmp
+*.temp
