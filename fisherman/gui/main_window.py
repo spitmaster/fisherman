@@ -236,7 +236,25 @@ class MainWindow(QMainWindow):
         system_group = QGroupBox("系统信息")
         system_layout = QVBoxLayout(system_group)
         
-        system_layout.addWidget(QLabel("系统信息显示"))
+        # PyTorch可用性检查
+        pytorch_status = "可用"
+        device_info = "CPU"
+        try:
+            import torch
+            pytorch_status = f"可用 (版本: {torch.__version__})"
+            if torch.cuda.is_available():
+                device_info = f"GPU (CUDA: {torch.version.cuda})"
+            else:
+                device_info = "CPU"
+        except Exception as e:
+            pytorch_status = f"不可用: {str(e)}"
+        
+        system_layout.addWidget(QLabel(f"PyTorch库: {pytorch_status}"))
+        system_layout.addWidget(QLabel(f"计算设备: {device_info}"))
+        
+        # 显示当前使用的PyTorch设备信息
+        if device_info == "CPU":
+            system_layout.addWidget(QLabel("当前使用CPU进行训练和推理"))
         
         settings_layout.addWidget(system_group)
         

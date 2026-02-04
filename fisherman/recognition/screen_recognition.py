@@ -47,7 +47,10 @@ class ScreenRecognition:
         # 加载YOLO模型
         try:
             self.model = YOLO(model_path)
-            logger.info(f"YOLO模型加载成功: {model_path}")
+            # 强制使用CPU
+            import torch
+            self.model.to(torch.device("cpu"))
+            logger.info(f"YOLO模型加载成功: {model_path} (使用CPU)")
         except Exception as e:
             logger.error(f"YOLO模型加载失败: {str(e)}")
             self.model = None
@@ -238,7 +241,8 @@ class ScreenRecognition:
             results = self.model.predict(
                 source=image,
                 conf=self.confidence_threshold,
-                verbose=False
+                verbose=False,
+                device="cpu"  # 强制使用CPU进行推理
             )
             
             detections = []
