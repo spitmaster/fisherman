@@ -20,33 +20,15 @@ import logging
 # 配置基础日志记录
 logging.basicConfig(level=logging.INFO)
 
-# 尝试解决PyTorch DLL加载问题
+# 简化PyTorch导入检查，不处理DLL路径
 pytorch_available = False
 try:
-    # 获取PyTorch安装路径
     import torch
-    torch_path = os.path.dirname(torch.__file__)
-    lib_path = os.path.join(torch_path, "lib")
-    
-    # 添加PyTorch库路径到系统DLL搜索路径
-    if hasattr(os, 'add_dll_directory'):
-        os.add_dll_directory(lib_path)
-        logging.info(f"成功添加PyTorch库路径: {lib_path}")
-    else:
-        # 旧版本Python的解决方法
-        if lib_path not in os.environ['PATH']:
-            os.environ['PATH'] = lib_path + os.pathsep + os.environ['PATH']
-            logging.info(f"成功添加PyTorch库路径到PATH: {lib_path}")
-            
     pytorch_available = True
-    logging.info("PyTorch库加载成功")
-            
+    logging.info("PyTorch库导入成功")
 except Exception as e:
-    logging.warning(f"PyTorch DLL加载优化失败: {e}")
-    import traceback
-    logging.warning(f"错误堆栈: {traceback.format_exc()}")
+    logging.warning(f"PyTorch导入失败: {e}")
     logging.warning("程序将继续运行，但PyTorch相关功能可能不可用")
-    pytorch_available = False
 
 # 添加项目根目录到Python路径
 project_root = os.path.dirname(os.path.abspath(__file__))

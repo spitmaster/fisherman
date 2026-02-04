@@ -23,8 +23,8 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 from ultralytics import YOLO
-from ultralytics.yolo.utils.ops import non_max_suppression
-from ultralytics.yolo.engine.results import Results
+# from ultralytics.utils.ops import non_max_suppression  # Not available in ultralytics 8.x
+from ultralytics.engine.results import Results
 from PIL import Image, ImageDraw, ImageFont
 
 from fisherman.global_support.database import db_manager, TrainingTask, TrainingLog, ModelVersion
