@@ -46,3 +46,72 @@ Fisherman.spec
 # 其他
 *.tmp
 *.temp
+
+# 训练数据
+training_data/
+runs/
+
+# 模型文件
+*.pt
+*.pth
+models/*.pt
+models/*.pth
+
+# 数据集
+dataset/
+datasets/
+
+# 日志目录
+logs/
+
+# 虚拟环境
+venv/
+env/
+.env/
+
+# 系统临时文件
+*.bak
+*.backup
+*.old
+
+# 编辑器临时文件
+*~
+*.swp
+*.swo
+
+# 操作系统临时文件
+*.tmp
+*.temp
+*.log
+
+# 数据库备份
+*.db.bak
+*.sqlite.bak
+
+# PyInstaller生成的文件
+*.spec
+build/
+dist/
+
+# Jupyter Notebook
+*.ipynb_checkpoints/
+
+# 测试和覆盖率
+.coverage
+.pytest_cache/
+.tox/
+
+# 文档
+*.pdf
+*.docx
+*.xlsx
+
+# 其他临时文件
+.cache/
+.temp/
+.tmp/
+
+# 版本控制
+.gitignore
+.gitattributes
+.gitmodules
