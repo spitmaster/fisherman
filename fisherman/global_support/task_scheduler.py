@@ -197,6 +197,27 @@ class TaskScheduler:
         with self.condition:
             return len(self.task_queue)
             
+    def stop_task(self, task_id):
+        """停止任务
+        
+        Args:
+            task_id: 要停止的任务ID
+        """
+        task = self.get_task(task_id)
+        if task:
+            if task.status == TaskStatus.RUNNING:
+                task.cancel()
+                logger.info(f"任务已取消: {task.task_name} (ID: {task_id})")
+            elif task.status == TaskStatus.PENDING:
+                self.remove_task(task_id)
+                logger.info(f"任务已从队列中移除: {task.task_name} (ID: {task_id})")
+            else:
+                logger.warning(f"任务无法停止，当前状态: {task.status}")
+            return True
+        else:
+            logger.error(f"未找到任务: {task_id}")
+            return False
+            
     def get_running_tasks_count(self):
         """获取运行中任务数"""
         with self.condition:

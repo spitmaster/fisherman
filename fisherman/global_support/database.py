@@ -26,6 +26,8 @@ class TrainingTask(Base):
     model_path = Column(String(500))
     epochs = Column(Integer, default=50)
     batch_size = Column(Integer, default=16)
+    mAP = Column(Integer)
+    loss = Column(Integer)
     
     # 关系
     training_logs = relationship("TrainingLog", back_populates="training_task")

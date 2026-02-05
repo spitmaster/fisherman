@@ -39,6 +39,240 @@ class TrainingManager:
     def __init__(self):
         """初始化训练管理器"""
         self.training_tasks = {}
+        # 加载所有训练任务
+        self._load_all_training_tasks()
+    
+    def _load_all_training_tasks(self):
+        """加载所有训练任务"""
+        session = db_manager.get_session()
+        try:
+            tasks = session.query(TrainingTask).all()
+            for task in tasks:
+                task_info = {
+                    "task_dir": os.path.join("training_data", task.task_name),
+                    "status": task.status,
+                    "annotated_images": 0,
+                    "total_images": 0
+                }
+                
+                # 获取数据集信息
+                if task.dataset_path and os.path.exists(task.dataset_path):
+                    image_dir = os.path.join(os.path.dirname(task.dataset_path), "images", "train")
+                    label_dir = os.path.join(os.path.dirname(task.dataset_path), "labels", "train")
+                    
+                    if os.path.exists(image_dir):
+                        image_files = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+                        task_info["total_images"] = len(image_files)
+                        
+                        if os.path.exists(label_dir):
+                            annotated_count = 0
+                            for img_file in image_files:
+                                txt_file = os.path.splitext(img_file)[0] + ".txt"
+                                if os.path.exists(os.path.join(label_dir, txt_file)):
+                                    annotated_count += 1
+                            task_info["annotated_images"] = annotated_count
+                
+                self.training_tasks[task.id] = task_info
+                
+            logger.info(f"加载训练任务成功: 共 {len(tasks)} 个任务")
+            
+        except Exception as e:
+            logger.error(f"加载训练任务出错: {str(e)}", exc_info=True)
+            
+        finally:
+            session.close()
+    
+    def get_all_training_tasks(self):
+        """获取所有训练任务
+        
+        Returns:
+            训练任务列表
+        """
+        session = db_manager.get_session()
+        try:
+            tasks = session.query(TrainingTask).all()
+            
+            task_list = []
+            for task in tasks:
+                task_info = self.training_tasks.get(task.id)
+                if not task_info:
+                    task_info = {
+                        "task_dir": os.path.join("training_data", task.task_name),
+                        "status": task.status,
+                        "annotated_images": 0,
+                        "total_images": 0
+                    }
+                
+                task_list.append({
+                    "id": task.id,
+                    "task_name": task.task_name,
+                    "task_description": task.task_description,
+                    "status": task.status,
+                    "created_at": task.created_at,
+                    "updated_at": task.updated_at,
+                    "dataset_path": task.dataset_path,
+                    "model_path": task.model_path,
+                    "epochs": task.epochs,
+                    "batch_size": task.batch_size,
+                    "annotated_images": task_info["annotated_images"],
+                    "total_images": task_info["total_images"]
+                })
+                
+            return task_list
+            
+        except Exception as e:
+            logger.error(f"获取训练任务列表出错: {str(e)}", exc_info=True)
+            return []
+            
+        finally:
+            session.close()
+    
+    def get_training_task_by_id(self, task_id):
+        """根据ID获取训练任务
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            训练任务详情
+        """
+        session = db_manager.get_session()
+        try:
+            task = session.get(TrainingTask, task_id)
+            
+            if not task:
+                logger.error(f"训练任务不存在: {task_id}")
+                return None
+                
+            task_info = self.training_tasks.get(task_id)
+            if not task_info:
+                task_info = {
+                    "task_dir": os.path.join("training_data", task.task_name),
+                    "status": task.status,
+                    "annotated_images": 0,
+                    "total_images": 0
+                }
+                
+            return {
+                "id": task.id,
+                "task_name": task.task_name,
+                "task_description": task.task_description,
+                "status": task.status,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at,
+                "dataset_path": task.dataset_path,
+                "model_path": task.model_path,
+                "epochs": task.epochs,
+                "batch_size": task.batch_size,
+                "annotated_images": task_info["annotated_images"],
+                "total_images": task_info["total_images"]
+            }
+            
+        except Exception as e:
+            logger.error(f"获取训练任务详情出错: {str(e)}", exc_info=True)
+            return None
+            
+        finally:
+            session.close()
+    
+    def update_training_task(self, task_id, task_name=None, task_description=None, epochs=None, batch_size=None):
+        """更新训练任务信息
+        
+        Args:
+            task_id: 任务ID
+            task_name: 新任务名称
+            task_description: 新任务描述
+            epochs: 新训练轮数
+            batch_size: 新批次大小
+            
+        Returns:
+            更新结果
+        """
+        session = db_manager.get_session()
+        try:
+            task = session.get(TrainingTask, task_id)
+            
+            if not task:
+                logger.error(f"训练任务不存在: {task_id}")
+                return False
+                
+            if task_name:
+                # 重命名任务目录
+                old_dir = os.path.join("training_data", task.task_name)
+                new_dir = os.path.join("training_data", task_name)
+                
+                if os.path.exists(old_dir) and old_dir != new_dir:
+                    os.rename(old_dir, new_dir)
+                    
+                task.task_name = task_name
+                
+            if task_description is not None:
+                task.task_description = task_description
+                
+            if epochs is not None:
+                task.epochs = epochs
+                
+            if batch_size is not None:
+                task.batch_size = batch_size
+                
+            session.commit()
+            
+            # 更新训练任务字典
+            if task_id in self.training_tasks:
+                self.training_tasks[task_id]["task_dir"] = os.path.join("training_data", task.task_name)
+                
+            logger.info(f"训练任务更新成功: {task_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新训练任务出错: {str(e)}", exc_info=True)
+            session.rollback()
+            return False
+            
+        finally:
+            session.close()
+    
+    def delete_training_task(self, task_id):
+        """删除训练任务
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            删除结果
+        """
+        session = db_manager.get_session()
+        try:
+            task = session.get(TrainingTask, task_id)
+            
+            if not task:
+                logger.error(f"训练任务不存在: {task_id}")
+                return False
+                
+            # 删除任务目录
+            task_dir = os.path.join("training_data", task.task_name)
+            if os.path.exists(task_dir):
+                try:
+                    shutil.rmtree(task_dir)
+                    logger.info(f"任务目录删除成功: {task_dir}")
+                except Exception as e:
+                    logger.error(f"删除任务目录失败: {str(e)}")
+                    
+            # 删除数据库记录
+            session.delete(task)
+            session.commit()
+            
+            # 从训练任务字典中移除
+            if task_id in self.training_tasks:
+                del self.training_tasks[task_id]
+                
+            logger.info(f"训练任务删除成功: {task_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除训练任务出错: {str(e)}", exc_info=True)
+            session.rollback()
+            return False
         
     def create_training_task(self, task_name, task_description, dataset_path=None, epochs=50, batch_size=8):
         """创建新的训练任务
@@ -74,7 +308,7 @@ class TrainingManager:
                 task_name=task_name,
                 task_description=task_description,
                 dataset_path=os.path.join(task_dir, "dataset"),
-                training_epochs=epochs,
+                epochs=epochs,
                 batch_size=batch_size
             )
             
@@ -213,25 +447,39 @@ class TrainingManager:
                 }
                 self.training_tasks[task_id] = task_info
                 
-            # 创建图片目标目录
+            # 确保数据集目录存在
             image_dir = os.path.join(task_info["task_dir"], "dataset/images/train")
             label_dir = os.path.join(task_info["task_dir"], "dataset/labels/train")
+            os.makedirs(image_dir, exist_ok=True)
+            os.makedirs(label_dir, exist_ok=True)
             
             imported_count = 0
             for image_path in image_paths:
                 try:
+                    # 检查文件是否为图片格式
+                    if not image_path.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+                        logger.warning(f"跳过非图片文件: {image_path}")
+                        continue
+                        
                     # 复制图片到任务目录
                     filename = os.path.basename(image_path)
                     dest_path = os.path.join(image_dir, filename)
-                    shutil.copy2(image_path, dest_path)
                     
+                    # 检查文件是否已存在
+                    if os.path.exists(dest_path):
+                        logger.warning(f"图片已存在，跳过: {filename}")
+                        continue
+                        
+                    shutil.copy2(image_path, dest_path)
                     imported_count += 1
                     
                 except Exception as e:
                     logger.error(f"导入图片失败: {image_path} - {str(e)}")
                     
             # 更新任务信息
-            task_info["total_images"] = len(os.listdir(image_dir))
+            task_info["total_images"] = len([f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))])
+            task_info["annotated_images"] = len([f for f in os.listdir(label_dir) if f.lower().endswith('.txt')])
+            
             logger.info(f"图片导入成功: 任务ID={task_id}, 导入数量={imported_count}")
             
             return imported_count
@@ -242,6 +490,102 @@ class TrainingManager:
             
         finally:
             session.close()
+    
+    def get_dataset_info(self, task_id):
+        """获取数据集信息
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            数据集信息，包括图片数量、标注数量等
+        """
+        session = db_manager.get_session()
+        try:
+            training_task = session.get(TrainingTask, task_id)
+            
+            if not training_task:
+                logger.error(f"训练任务不存在: {task_id}")
+                return None
+                
+            task_info = self.training_tasks.get(task_id)
+            if not task_info:
+                task_info = {
+                    "task_dir": os.path.join("training_data", training_task.task_name),
+                    "status": training_task.status,
+                    "annotated_images": 0,
+                    "total_images": 0
+                }
+                
+            image_dir = os.path.join(task_info["task_dir"], "dataset/images/train")
+            label_dir = os.path.join(task_info["task_dir"], "dataset/labels/train")
+            
+            if not os.path.exists(image_dir):
+                return {
+                    "total_images": 0,
+                    "annotated_images": 0,
+                    "unannotated_images": 0,
+                    "image_files": []
+                }
+                
+            image_files = [f for f in os.listdir(image_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+            annotated_files = []
+            
+            if os.path.exists(label_dir):
+                annotated_files = [os.path.splitext(f)[0] + ".txt" for f in os.listdir(label_dir) if f.lower().endswith('.txt')]
+                
+            annotated_count = 0
+            unannotated_images = []
+            
+            for img_file in image_files:
+                txt_file = os.path.splitext(img_file)[0] + ".txt"
+                if txt_file in annotated_files:
+                    annotated_count += 1
+                else:
+                    unannotated_images.append(img_file)
+                    
+            return {
+                "total_images": len(image_files),
+                "annotated_images": annotated_count,
+                "unannotated_images": len(unannotated_images),
+                "image_files": image_files,
+                "unannotated_image_files": unannotated_images
+            }
+            
+        except Exception as e:
+            logger.error(f"获取数据集信息出错: {str(e)}", exc_info=True)
+            return None
+            
+        finally:
+            session.close()
+    
+    def get_image_list(self, task_id):
+        """获取任务的图片列表
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            图片文件列表
+        """
+        dataset_info = self.get_dataset_info(task_id)
+        if dataset_info:
+            return dataset_info["image_files"]
+        return []
+    
+    def get_unannotated_images(self, task_id):
+        """获取未标注的图片列表
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            未标注的图片文件列表
+        """
+        dataset_info = self.get_dataset_info(task_id)
+        if dataset_info:
+            return dataset_info["unannotated_image_files"]
+        return []
             
     def start_annotation(self, task_id):
         """开始标注任务
@@ -398,7 +742,7 @@ class TrainingManager:
                 task_name=training_task.task_name,
                 dataset_path=training_task.dataset_path,
                 model_path=os.path.join(task_info["task_dir"], "models"),
-                epochs=training_task.training_epochs,
+                epochs=training_task.epochs,
                 batch_size=training_task.batch_size
             )
             
@@ -597,6 +941,11 @@ class TrainingManager:
             task_info["annotated_images"] = annotated_count
             task_info["total_images"] = len(image_files)
             
+            # 计算标注进度
+            annotation_progress = 0
+            if task_info["total_images"] > 0:
+                annotation_progress = (task_info["annotated_images"] / task_info["total_images"]) * 100
+            
             return {
                 "id": training_task.id,
                 "name": training_task.task_name,
@@ -606,10 +955,11 @@ class TrainingManager:
                 "updated_at": training_task.updated_at,
                 "dataset_path": training_task.dataset_path,
                 "model_path": training_task.model_path,
-                "epochs": training_task.training_epochs,
+                "epochs": training_task.epochs,
                 "batch_size": training_task.batch_size,
                 "annotated_images": task_info["annotated_images"],
                 "total_images": task_info["total_images"],
+                "annotation_progress": round(annotation_progress, 1),
                 "mAP": training_task.mAP,
                 "loss": training_task.loss
             }
@@ -620,6 +970,69 @@ class TrainingManager:
             
         finally:
             session.close()
+    
+    def update_task_status(self, task_id, status):
+        """更新任务状态
+        
+        Args:
+            task_id: 任务ID
+            status: 新状态 (pending/annotating/training/completed/failed)
+            
+        Returns:
+            更新结果
+        """
+        valid_statuses = ['pending', 'annotating', 'training', 'completed', 'failed']
+        if status not in valid_statuses:
+            logger.error(f"无效的任务状态: {status}")
+            return False
+            
+        session = db_manager.get_session()
+        try:
+            training_task = session.get(TrainingTask, task_id)
+            
+            if not training_task:
+                logger.error(f"训练任务不存在: {task_id}")
+                return False
+                
+            training_task.status = status
+            session.commit()
+            
+            if task_id in self.training_tasks:
+                self.training_tasks[task_id]["status"] = status
+                
+            logger.info(f"任务状态更新成功: {task_id} -> {status}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新任务状态出错: {str(e)}", exc_info=True)
+            session.rollback()
+            return False
+            
+        finally:
+            session.close()
+    
+    def get_task_progress(self, task_id):
+        """获取任务进度
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            任务进度信息
+        """
+        status_info = self.get_training_task_status(task_id)
+        if not status_info:
+            return None
+            
+        progress_info = {
+            "annotation_progress": status_info["annotation_progress"],
+            "total_images": status_info["total_images"],
+            "annotated_images": status_info["annotated_images"],
+            "unannotated_images": status_info["total_images"] - status_info["annotated_images"],
+            "status": status_info["status"]
+        }
+        
+        return progress_info
 
 # 全局训练管理器实例
 training_manager = TrainingManager()
