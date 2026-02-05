@@ -603,6 +603,12 @@ class TrainingManager:
             if not training_task:
                 logger.error(f"训练任务不存在: {task_id}")
                 return None
+            
+            # 更新任务状态为标注中（如果当前状态是pending）
+            if training_task.status == 'pending':
+                training_task.status = 'annotating'
+                session.commit()
+                logger.info(f"任务状态更新为标注中: {task_id}")
                 
             # 获取任务信息
             task_info = self.training_tasks.get(task_id)
@@ -629,6 +635,7 @@ class TrainingManager:
                     
             task_info["annotated_images"] = annotated_count
             task_info["total_images"] = len(image_files)
+            task_info["status"] = training_task.status
             
             logger.info(f"标注任务启动: 任务ID={task_id}, 已标注={annotated_count}, 总数={len(image_files)}")
             
@@ -640,6 +647,7 @@ class TrainingManager:
             
         except Exception as e:
             logger.error(f"启动标注任务出错: {str(e)}", exc_info=True)
+            session.rollback()
             return None
             
         finally:
@@ -803,7 +811,7 @@ class TrainingManager:
         
         Args:
             task_id: 任务ID
-            results: 训练结果
+            results: 训练结果对象
         """
         session = db_manager.get_session()
         try:
@@ -816,26 +824,64 @@ class TrainingManager:
             # 获取任务信息
             task_info = self.training_tasks.get(task_id)
             
-            # 保存训练好的模型
-            if hasattr(results, 'weights'):
+            # 确定训练后的模型文件路径
+            model_path = None
+            if hasattr(results, 'weights') and results.weights:
                 model_path = results.weights
             else:
-                # 如果没有weights属性，查找默认的模型路径
+                # 尝试从默认的YOLOv8训练输出目录查找
                 runs_dir = os.path.join("runs", "detect")
                 if os.path.exists(runs_dir):
-                    latest_run = sorted(os.listdir(runs_dir))[-1]
-                    model_path = os.path.join(runs_dir, latest_run, "weights", "best.pt")
-                else:
-                    logger.error("找不到训练后的模型文件")
-                    return
-                    
+                    try:
+                        train_dirs = [d for d in os.listdir(runs_dir) if d.startswith('train')]
+                        if train_dirs:
+                            latest_train = sorted(train_dirs)[-1]
+                            model_path = os.path.join(runs_dir, latest_train, "weights", "best.pt")
+                    except Exception as e:
+                        logger.warning(f"查找训练目录失败: {e}")
+            
+            if not model_path or not os.path.exists(model_path):
+                logger.error(f"找不到训练后的模型文件: {model_path}")
+                return
+            
             # 复制模型到任务目录
-            dest_path = os.path.join(task_info["task_dir"], "models", "best.pt")
+            dest_dir = os.path.join(task_info["task_dir"], "models")
+            os.makedirs(dest_dir, exist_ok=True)
+            dest_path = os.path.join(dest_dir, "best.pt")
             shutil.copy2(model_path, dest_path)
+            
+            # 提取训练指标
+            mAP = None
+            loss = None
+            
+            try:
+                if hasattr(results, 'metrics'):
+                    metrics = results.metrics
+                    # 尝试获取mAP50
+                    if hasattr(metrics, 'map50'):
+                        mAP = float(metrics.map50)
+                    elif isinstance(metrics, dict) and 'metrics/mAP50' in metrics:
+                        mAP = float(metrics['metrics/mAP50'])
+                    elif isinstance(metrics, dict) and 'map50' in metrics:
+                        mAP = float(metrics['map50'])
+                    
+                    # 尝试获取box_loss
+                    if hasattr(metrics, 'box_loss'):
+                        loss = float(metrics.box_loss)
+                    elif isinstance(metrics, dict) and 'metrics/box_loss' in metrics:
+                        loss = float(metrics['metrics/box_loss'])
+                    elif isinstance(metrics, dict) and 'box_loss' in metrics:
+                        loss = float(metrics['box_loss'])
+            except Exception as e:
+                logger.warning(f"提取训练指标失败: {e}")
             
             # 更新任务信息
             training_task.status = "completed"
             training_task.model_path = dest_path
+            if mAP is not None:
+                training_task.mAP = mAP
+            if loss is not None:
+                training_task.loss = loss
             
             # 保存模型版本信息
             model_version = ModelVersion(
@@ -849,11 +895,12 @@ class TrainingManager:
             session.add(model_version)
             session.commit()
             
-            logger.info(f"训练结果保存成功: 任务ID={task_id}, 模型路径={dest_path}")
+            logger.info(f"训练结果保存成功: 任务ID={task_id}, 模型路径={dest_path}, mAP={mAP}, loss={loss}")
             
         except Exception as e:
             logger.error(f"保存训练结果出错: {str(e)}", exc_info=True)
             session.rollback()
+            raise
             
         finally:
             session.close()

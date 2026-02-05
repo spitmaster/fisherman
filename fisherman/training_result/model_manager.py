@@ -20,6 +20,8 @@ import hashlib
 import platform
 from datetime import datetime
 import torch
+from sqlalchemy import and_
+from fisherman.global_support.database import db_manager, ModelVersion, TrainingTask
 
 # 日志配置
 logger = logging.getLogger(__name__)
@@ -40,14 +42,53 @@ class ModelManager:
         """加载所有模型信息"""
         self.models = []
         
-        # 遍历模型目录
+        # 从数据库加载模型版本信息
+        session = db_manager.get_session()
+        try:
+            model_versions = session.query(ModelVersion).all()
+            for version in model_versions:
+                model_path = version.model_path
+                if os.path.exists(model_path):
+                    model_info = self._get_model_info(model_path)
+                    if model_info:
+                        # 添加数据库中的元数据
+                        model_info["version"] = version.version
+                        model_info["is_default"] = version.is_default
+                        model_info["created_time"] = version.created_at
+                        model_info["training_task_id"] = version.training_task_id
+                        # 获取关联的训练任务信息
+                        training_task = session.get(TrainingTask, version.training_task_id)
+                        if training_task:
+                            model_info["task_name"] = training_task.task_name
+                            model_info["task_description"] = training_task.task_description
+                        self.models.append(model_info)
+                else:
+                    logger.warning(f"模型文件不存在: {model_path}")
+            
+            logger.info(f"从数据库加载 {len(model_versions)} 个模型版本")
+        except Exception as e:
+            logger.error(f"从数据库加载模型失败: {str(e)}")
+        finally:
+            session.close()
+        
+        # 同时扫描模型目录以包含手动导入的模型（未在数据库中注册的）
         if os.path.exists(self.models_dir):
             for filename in os.listdir(self.models_dir):
                 if filename.endswith(".pt"):
                     model_path = os.path.join(self.models_dir, filename)
-                    model_info = self._get_model_info(model_path)
-                    if model_info:
-                        self.models.append(model_info)
+                    # 检查是否已在模型中
+                    already_loaded = any(m["path"] == model_path for m in self.models)
+                    if not already_loaded:
+                        model_info = self._get_model_info(model_path)
+                        if model_info:
+                            # 手动导入的模型标记为未关联任务
+                            model_info["version"] = "manual"
+                            model_info["is_default"] = False
+                            model_info["created_time"] = datetime.fromtimestamp(os.path.getctime(model_path))
+                            model_info["training_task_id"] = None
+                            model_info["task_name"] = "手动导入"
+                            model_info["task_description"] = "用户手动导入的模型"
+                            self.models.append(model_info)
         
         logger.info(f"成功加载 {len(self.models)} 个模型文件")
         
@@ -119,12 +160,13 @@ class ModelManager:
             logger.error(f"获取模型信息出错: {model_path} - {str(e)}")
             return None
             
-    def import_model(self, model_path, model_name=None):
+    def import_model(self, model_path, model_name=None, training_task_id=None):
         """导入外部模型文件
         
         Args:
             model_path: 源模型文件路径
             model_name: 自定义模型名称（可选）
+            training_task_id: 关联的训练任务ID（可选）
             
         Returns:
             导入后的模型信息或None
@@ -165,9 +207,36 @@ class ModelManager:
             # 复制模型文件
             shutil.copy2(model_path, dest_path)
             
-            # 获取模型信息
+            # 在数据库中创建模型版本记录
+            session = db_manager.get_session()
+            try:
+                model_version = ModelVersion(
+                    training_task_id=training_task_id,
+                    model_path=dest_path,
+                    version="manual",
+                    is_default=False,
+                    file_size=os.path.getsize(dest_path)
+                )
+                session.add(model_version)
+                session.commit()
+                logger.info(f"模型版本记录创建成功: {dest_filename}")
+            except Exception as e:
+                logger.error(f"创建模型版本记录失败: {str(e)}")
+                session.rollback()
+                # 继续执行，不中断
+            finally:
+                session.close()
+            
+            # 获取模型信息并添加到列表
             model_info = self._get_model_info(dest_path)
             if model_info:
+                # 添加元数据
+                model_info["version"] = "manual"
+                model_info["is_default"] = False
+                model_info["created_time"] = datetime.fromtimestamp(os.path.getctime(dest_path))
+                model_info["training_task_id"] = training_task_id
+                model_info["task_name"] = "手动导入"
+                model_info["task_description"] = "用户手动导入的模型"
                 self.models.append(model_info)
                 logger.info(f"模型导入成功: {dest_filename}")
                 return model_info
@@ -250,29 +319,47 @@ class ModelManager:
         Returns:
             是否成功设置
         """
+        session = db_manager.get_session()
         try:
-            # 清除所有默认模型标志
-            for model_info in self.models:
-                model_info["is_default"] = False
-                
-            # 设置指定模型为默认模型
-            target_model = None
+            # 查找模型信息
+            target_model_info = None
             for model_info in self.models:
                 if model_info["filename"] == filename:
-                    model_info["is_default"] = True
-                    target_model = model_info
+                    target_model_info = model_info
                     break
-                    
-            if target_model:
+            
+            if not target_model_info:
+                logger.error(f"模型文件不存在: {filename}")
+                return False
+            
+            # 在数据库中清除所有默认模型标志
+            session.query(ModelVersion).update({"is_default": False})
+            
+            # 设置指定模型为默认模型（通过模型路径匹配）
+            model_version = session.query(ModelVersion).filter(
+                ModelVersion.model_path == target_model_info["path"]
+            ).first()
+            
+            if model_version:
+                model_version.is_default = True
+                session.commit()
+                
+                # 更新内存中的标志
+                for model_info in self.models:
+                    model_info["is_default"] = (model_info["filename"] == filename)
+                
                 logger.info(f"默认模型设置成功: {filename}")
                 return True
+            else:
+                logger.error(f"在数据库中找不到模型版本记录: {filename}")
+                return False
                 
-            logger.error(f"模型文件不存在: {filename}")
-            return False
-            
         except Exception as e:
             logger.error(f"设置默认模型出错: {str(e)}")
+            session.rollback()
             return False
+        finally:
+            session.close()
             
     def delete_model(self, filename):
         """删除模型文件
@@ -283,21 +370,42 @@ class ModelManager:
         Returns:
             是否成功删除
         """
+        session = db_manager.get_session()
         try:
             # 查找模型
             model_info = self.get_model_by_name(filename)
             if not model_info:
                 logger.error(f"模型文件不存在: {filename}")
                 return False
-                
+            
             # 检查模型是否是默认模型
             if model_info.get("is_default", False):
                 logger.warning("正在删除默认模型，将重新设置其他模型为默认")
                 # 如果是默认模型且还有其他模型，则设置第一个模型为默认
                 other_models = [m for m in self.models if m["filename"] != filename]
                 if other_models:
-                    other_models[0]["is_default"] = True
-                    
+                    # 在数据库中设置新的默认模型
+                    other_model_info = other_models[0]
+                    other_model_version = session.query(ModelVersion).filter(
+                        ModelVersion.model_path == other_model_info["path"]
+                    ).first()
+                    if other_model_version:
+                        session.query(ModelVersion).update({"is_default": False})
+                        other_model_version.is_default = True
+                        session.commit()
+                        # 更新内存中的标志
+                        for m in self.models:
+                            m["is_default"] = (m["filename"] == other_model_info["filename"])
+            
+            # 删除数据库中的模型版本记录
+            model_version = session.query(ModelVersion).filter(
+                ModelVersion.model_path == model_info["path"]
+            ).first()
+            if model_version:
+                session.delete(model_version)
+                session.commit()
+                logger.info(f"模型版本记录删除成功: {filename}")
+            
             # 删除模型文件
             if os.path.exists(model_info["path"]):
                 os.remove(model_info["path"])
@@ -309,7 +417,10 @@ class ModelManager:
             
         except Exception as e:
             logger.error(f"删除模型文件出错: {str(e)}")
+            session.rollback()
             return False
+        finally:
+            session.close()
             
     def compare_models(self, model_names):
         """对比多个模型的信息

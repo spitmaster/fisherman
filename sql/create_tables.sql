@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS training_tasks (
     model_path TEXT,
     epochs INTEGER DEFAULT 50,
     batch_size INTEGER DEFAULT 8,
-    training_epochs INTEGER DEFAULT 50,
     mAP REAL,
     loss REAL
 );

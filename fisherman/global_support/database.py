@@ -1,7 +1,7 @@
 import os
 import sys
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime, Text, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,9 +25,9 @@ class TrainingTask(Base):
     dataset_path = Column(String(500))
     model_path = Column(String(500))
     epochs = Column(Integer, default=50)
-    batch_size = Column(Integer, default=16)
-    mAP = Column(Integer)
-    loss = Column(Integer)
+    batch_size = Column(Integer, default=8)
+    mAP = Column(Float)
+    loss = Column(Float)
     
     # 关系
     training_logs = relationship("TrainingLog", back_populates="training_task")
@@ -96,6 +96,7 @@ class ModelVersion(Base):
     version = Column(String(50))
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
+    file_size = Column(Integer, default=0)
     
     training_task = relationship("TrainingTask")
 
