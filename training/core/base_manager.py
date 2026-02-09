@@ -6,7 +6,7 @@
 
 import logging
 from typing import Dict, Any, Optional
-from fisherman.global_support.database import db_manager
+from global_support.database import db_manager
 
 
 class BaseManager:
@@ -26,7 +26,7 @@ class BaseManager:
             module_name: 模块名称，用于日志记录
         """
         if module_name:
-            self.logger = logging.getLogger(f"fisherman.training.{module_name}")
+            self.logger = logging.getLogger(f"training.{module_name}")
         else:
             self.logger = logging.getLogger(self.__class__.__module__)
         

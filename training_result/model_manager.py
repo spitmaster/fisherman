@@ -21,7 +21,7 @@ import platform
 from datetime import datetime
 import torch
 from sqlalchemy import and_
-from fisherman.global_support.database import db_manager, ModelVersion, TrainingTask
+from global_support.database import db_manager, ModelVersion, TrainingTask
 
 # 日志配置
 logger = logging.getLogger(__name__)

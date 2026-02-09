@@ -61,11 +61,11 @@ def test_database_query():
     """测试数据库查询"""
     try:
         # 连接到数据库
-        from fisherman.global_support.database import db_manager
+        from global_support.database import db_manager
         if db_manager.connect():
             # 测试基本查询
             with db_manager.get_session() as session:
-                from fisherman.global_support.database import TrainingTask
+                from global_support.database import TrainingTask
                 count = session.query(TrainingTask).count()
                 logging.info(f"训练任务数量: {count}")
                 

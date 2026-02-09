@@ -12,8 +12,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from ultralytics import YOLO
-from fisherman.global_support.database import db_manager, TrainingTask, TrainingLog, ModelVersion
-from fisherman.global_support.task_scheduler import task_scheduler, TrainingTask as SchedulerTrainingTask
+from global_support.database import db_manager, TrainingTask, TrainingLog, ModelVersion
+from global_support.task_scheduler import task_scheduler, TrainingTask as SchedulerTrainingTask
 
 from ..core.interfaces import ITrainer
 from ..core.base_manager import BaseManager

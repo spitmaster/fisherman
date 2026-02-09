@@ -19,22 +19,22 @@ def test_imports():
     
     try:
         # 测试导入新模块
-        from fisherman.training import training_manager, annotation_manager
+        from training import training_manager, annotation_manager
         print("✓ 成功导入 training_manager 和 annotation_manager")
         
-        from fisherman.training.task import TrainingTaskManager, TaskCreator, TaskStatusTracker, DatasetManager
+        from training.task import TaskCreator, TaskStatusTracker, DatasetManager
         print("✓ 成功导入 task 模块")
         
-        from fisherman.training.annotation import AnnotationTool, AnnotationManager
+        from training.annotation import AnnotationTool, AnnotationManager
         print("✓ 成功导入 annotation 模块")
         
-        from fisherman.training.training import TrainingExecutor, YOLOTrainer
+        from training.training import TrainingExecutor, YOLOTrainer
         print("✓ 成功导入 training 模块")
         
-        from fisherman.training.utils import create_task_directory, get_image_files
+        from training.utils import create_task_directory, get_image_files
         print("✓ 成功导入 utils 模块")
         
-        from fisherman.training.core import BaseManager, ITrainingManager
+        from training.core import BaseManager, ITrainingManager
         print("✓ 成功导入 core 模块")
         
         return True
@@ -51,7 +51,7 @@ def test_manager_creation():
     print("\n测试管理器创建...")
     
     try:
-        from fisherman.training import training_manager, annotation_manager
+        from training import training_manager, annotation_manager
         
         # 检查管理器实例
         if training_manager is not None:
@@ -96,7 +96,7 @@ def test_module_structure():
     
     try:
         # 检查模块结构
-        import fisherman.training as training_module
+        import training as training_module
         
         # 检查子模块是否存在
         submodules = ['task', 'annotation', 'training', 'utils', 'core']

@@ -8,7 +8,11 @@ Fisherman 是一个基于计算机视觉的自动化程序，主要用于识别�
 
 ```
 d:\workspace\wow\fisherman\
-├── fisherman/                 # 主程序包
+├── global_support/            # 全局支撑模块
+├── gui/                       # 图形界面模块
+├── recognition/               # 识别模块
+├── training/                  # 训练模块
+├── training_result/           # 训练结果管理模块
 ├── fisherman_env/             # Python虚拟环境
 ├── logs/                      # 日志目录
 ├── models/                    # 训练好的模型目录
@@ -21,43 +25,45 @@ d:\workspace\wow\fisherman\
 ├── simple_test.py             # 简单测试脚本
 ├── test_modular_structure.py  # 模块结构测试
 ├── test_module_functionality.py # 模块功能测试
-└── test_without_pytorch.py    # 无PyTorch依赖的测试
+├── test_without_pytorch.py    # 无PyTorch依赖的测试
+├── requirements.txt           # 项目依赖
+└── README.md                  # 项目说明
 ```
 
 ## 主程序包结构
 
-### 1. fisherman/global_support/ - 全局支撑模块
+### 1. global_support/ - 全局支撑模块
 
 | 文件 | 功能描述 |
 |------|----------|
 | **database.py** | 数据库连接和操作模块，提供数据库连接、表创建和CRUD操作 |
 | **task_scheduler.py** | 任务调度器，负责统一调度训练和识别任务，避免资源冲突 |
 
-### 2. fisherman/gui/ - 图形界面模块
+### 2. gui/ - 图形界面模块
 
 | 文件 | 功能描述 |
 |------|----------|
 | **main_window.py** | 主窗口组件，使用PyQt5实现，包含训练、训练结果、识别和设置四个标签页 |
 | **minimal_window.py** | 极简窗口组件，提供基本的功能展示 |
 
-### 3. fisherman/recognition/ - 识别模块
+### 3. recognition/ - 识别模块
 
 | 文件 | 功能描述 |
 |------|----------|
 | **screen_recognition.py** | 屏幕识别模块，负责从屏幕抓取图像并识别目标物体 |
 
-### 4. fisherman/training/ - 训练模块
+### 4. training/ - 训练模块
 
 训练模块采用分层架构，包含以下子目录：
 
-#### 4.1 fisherman/training/core/ - 训练核心模块
+#### 4.1 training/core/ - 训练核心模块
 
 | 文件 | 功能描述 |
 |------|----------|
 | **base_manager.py** | 训练管理器基类，提供训练过程的通用功能 |
 | **interfaces.py** | 训练接口定义，规范训练过程中的数据结构和方法 |
 
-#### 4.2 fisherman/training/task/ - 任务管理模块
+#### 4.2 training/task/ - 任务管理模块
 
 | 文件 | 功能描述 |
 |------|----------|
@@ -66,7 +72,7 @@ d:\workspace\wow\fisherman\
 | **dataset_manager.py** | 数据集管理器，负责训练集的导入、管理和操作 |
 | **status_tracker.py** | 任务状态追踪器，负责跟踪任务的执行状态和进度 |
 
-#### 4.3 fisherman/training/annotation/ - 标注模块
+#### 4.3 training/annotation/ - 标注模块
 
 | 文件 | 功能描述 |
 |------|----------|
@@ -76,7 +82,7 @@ d:\workspace\wow\fisherman\
 | **visualizer.py** | 标注可视化工具，负责可视化标注结果 |
 | **yolo_formatter.py** | YOLO格式转换器，负责将标注数据转换为YOLO训练格式 |
 
-#### 4.4 fisherman/training/training/ - 训练执行模块
+#### 4.4 training/training/ - 训练执行模块
 
 | 文件 | 功能描述 |
 |------|----------|
@@ -85,7 +91,7 @@ d:\workspace\wow\fisherman\
 | **result_saver.py** | 训练结果保存器，负责保存训练结果和模型 |
 | **yolo_trainer.py** | YOLO训练器，负责调用YOLOv8模型进行训练 |
 
-#### 4.5 fisherman/training/utils/ - 训练工具模块
+#### 4.5 training/utils/ - 训练工具模块
 
 | 文件 | 功能描述 |
 |------|----------|
@@ -98,7 +104,7 @@ d:\workspace\wow\fisherman\
 | **annotation_tool.py** | 标注工具主入口，提供用户与标注功能的交互接口 |
 | **training_manager.py** | 训练管理器主入口，整合所有训练功能并提供统一接口 |
 
-### 5. fisherman/training_result/ - 训练结果管理模块
+### 5. training_result/ - 训练结果管理模块
 
 | 文件 | 功能描述 |
 |------|----------|

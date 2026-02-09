@@ -52,14 +52,15 @@ def check_project_structure():
         "requirements.txt",
         "README.md",
         "diagnose_pytorch.py",
-        os.path.join("fisherman", "__init__.py"),
-        os.path.join("fisherman", "gui", "main_window.py"),
-        os.path.join("fisherman", "global_support", "task_scheduler.py"),
-        os.path.join("fisherman", "global_support", "database.py"),
-        os.path.join("fisherman", "training", "training_manager.py"),
-        os.path.join("fisherman", "training", "annotation_tool.py"),
-        os.path.join("fisherman", "training_result", "model_manager.py"),
-        os.path.join("fisherman", "recognition", "screen_recognition.py")
+        "__init__.py",
+        os.path.join("gui", "main_window.py"),
+        os.path.join("global_support", "task_scheduler.py"),
+        os.path.join("global_support", "database.py"),
+        os.path.join("training", "training_manager.py"),
+        os.path.join("training", "__init__.py"),
+        os.path.join("training", "annotation_tool.py"),
+        os.path.join("training_result", "model_manager.py"),
+        os.path.join("recognition", "screen_recognition.py")
     ]
     
     for file_path in required_files:
@@ -79,7 +80,7 @@ def test_gui_import():
         print("✅ PyQt5 GUI 应用程序创建成功")
         
         try:
-            from fisherman.gui.main_window import MainWindow
+            from gui.main_window import MainWindow
             print("✅ 主窗口模块导入成功")
             
             # 尝试创建主窗口（但不显示）
@@ -102,7 +103,7 @@ def test_database_connection():
     print("=== 数据库连接测试 ===")
     
     try:
-        from fisherman.global_support.database import db_manager
+        from global_support.database import db_manager
         if db_manager.connect():
             print("✅ 数据库连接成功")
             
@@ -112,7 +113,7 @@ def test_database_connection():
             
             # 测试基本查询
             with db_manager.get_session() as session:
-                from fisherman.global_support.database import TrainingTask
+                from global_support.database import TrainingTask
                 count = session.query(TrainingTask).count()
                 print(f"✅ 训练任务数量: {count}")
                 
@@ -130,7 +131,7 @@ def test_task_scheduler():
     print("=== 任务调度器测试 ===")
     
     try:
-        from fisherman.global_support.task_scheduler import TaskType, TaskStatus, TaskScheduler
+        from global_support.task_scheduler import TaskType, TaskStatus, TaskScheduler
         
         scheduler = TaskScheduler()
         print("✅ 任务调度器创建成功")

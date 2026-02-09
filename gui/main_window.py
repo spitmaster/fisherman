@@ -23,11 +23,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QIcon
 
-from fisherman.training.training_manager import training_manager
-from fisherman.training.annotation_tool import annotation_manager
-from fisherman.training_result.model_manager import model_manager
-from fisherman.recognition.screen_recognition import recognition_manager
-from fisherman.global_support.task_scheduler import task_scheduler
+from training.training_manager import training_manager
+from training.annotation_tool import annotation_manager
+from training_result.model_manager import model_manager
+from recognition.screen_recognition import recognition_manager
+from global_support.task_scheduler import task_scheduler
 
 # 日志配置
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
     def init_application(self):
         """初始化应用程序"""
         # 连接到数据库
-        from fisherman.global_support.database import db_manager
+        from global_support.database import db_manager
         db_manager.connect()
         
         # 启动任务调度器
@@ -782,7 +782,7 @@ class MainWindow(QMainWindow):
         try:
             # 这里应该调用训练管理器的停止方法
             # 暂时使用简单的实现
-            from fisherman.global_support.task_scheduler import task_scheduler
+            from global_support.task_scheduler import task_scheduler
             task_scheduler.stop_task(task_id)
             
             self.btn_start_training.setEnabled(True)

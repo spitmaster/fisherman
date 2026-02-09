@@ -11,7 +11,7 @@ import shutil
 import logging
 from typing import List, Dict, Any, Optional
 
-from fisherman.global_support.database import db_manager, TrainingTask
+from global_support.database import db_manager, TrainingTask
 
 from ..core.interfaces import IDatasetManager
 from ..core.base_manager import BaseManager

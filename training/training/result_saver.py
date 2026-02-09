@@ -12,7 +12,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from fisherman.global_support.database import db_manager, ModelVersion, TrainingLog
+from global_support.database import db_manager, ModelVersion, TrainingLog
 
 from ..core.base_manager import BaseManager
 

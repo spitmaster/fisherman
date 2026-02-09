@@ -10,8 +10,8 @@ import os
 import logging
 from typing import Dict, Any, Optional
 
-from fisherman.global_support.database import db_manager, TrainingTask, TrainingLog
-from fisherman.global_support.task_scheduler import task_scheduler, TrainingTask as SchedulerTrainingTask
+from global_support.database import db_manager, TrainingTask, TrainingLog
+from global_support.task_scheduler import task_scheduler, TrainingTask as SchedulerTrainingTask
 
 from ..core.interfaces import ITaskStatusTracker
 from ..core.base_manager import BaseManager

@@ -12,7 +12,7 @@ import yaml
 import logging
 from typing import Optional
 
-from fisherman.global_support.database import db_manager, TrainingTask
+from global_support.database import db_manager, TrainingTask
 
 from ..core.base_manager import BaseManager
 from ..utils.file_ops import create_task_directory, copy_dataset, create_default_dataset_structure, create_data_yaml

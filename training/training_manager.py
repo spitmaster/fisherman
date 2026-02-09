@@ -27,8 +27,8 @@ from ultralytics import YOLO
 from ultralytics.engine.results import Results
 from PIL import Image, ImageDraw, ImageFont
 
-from fisherman.global_support.database import db_manager, TrainingTask, TrainingLog, ModelVersion
-from fisherman.global_support.task_scheduler import task_scheduler, TrainingTask as SchedulerTrainingTask
+from global_support.database import db_manager, TrainingTask, TrainingLog, ModelVersion
+from global_support.task_scheduler import task_scheduler, TrainingTask as SchedulerTrainingTask
 
 # 日志配置
 logger = logging.getLogger(__name__)

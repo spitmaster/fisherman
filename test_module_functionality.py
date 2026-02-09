@@ -18,7 +18,7 @@ def test_basic_functionality():
     print("测试基本功能...")
     
     try:
-        from fisherman.training import training_manager
+        from training import training_manager
         
         # 1. 测试获取所有任务
         tasks = training_manager.get_all_training_tasks()
@@ -85,7 +85,7 @@ def test_annotation_module():
     print("\n测试标注模块...")
     
     try:
-        from fisherman.training import annotation_manager
+        from training import annotation_manager
         
         # 检查标注管理器
         if annotation_manager is not None:
@@ -109,7 +109,7 @@ def test_annotation_module():
             return False
             
         # 测试工具函数导入
-        from fisherman.training.annotation import (
+        from training.annotation import (
             validate_single_annotation_file,
             convert_bbox_to_yolo,
             draw_annotations
@@ -130,7 +130,7 @@ def test_training_module():
     print("\n测试训练模块...")
     
     try:
-        from fisherman.training.training import (
+        from training.training import (
             training_executor,
             yolo_trainer,
             callback_handler,
@@ -166,7 +166,7 @@ def test_utils_module():
     print("\n测试工具模块...")
     
     try:
-        from fisherman.training.utils import (
+        from training.utils import (
             create_task_directory,
             get_image_files,
             ensure_directory_exists

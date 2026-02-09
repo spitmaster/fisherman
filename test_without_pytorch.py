@@ -27,7 +27,7 @@ def test_application():
         logging.info("Qt应用程序创建成功")
         
         # 测试数据库连接
-        from fisherman.global_support.database import db_manager
+        from global_support.database import db_manager
         if db_manager.connect():
             logging.info("数据库连接成功")
             
@@ -40,7 +40,7 @@ def test_application():
             # 测试基本查询
             try:
                 with db_manager.get_session() as session:
-                    from fisherman.global_support.database import TrainingTask
+                    from global_support.database import TrainingTask
                     count = session.query(TrainingTask).count()
                     logging.info(f"训练任务数量: {count}")
             except Exception as e:
@@ -51,7 +51,7 @@ def test_application():
             
         # 测试任务调度器
         try:
-            from fisherman.global_support.task_scheduler import TaskType, TaskStatus, TaskScheduler
+            from global_support.task_scheduler import TaskType, TaskStatus, TaskScheduler
             
             scheduler = TaskScheduler()
             logging.info("任务调度器创建成功")

@@ -42,16 +42,16 @@ from PyQt5.QtGui import QIcon
 # 延迟导入主窗口模块
 if pytorch_available:
     try:
-        from fisherman.gui.main_window import MainWindow
+        from gui.main_window import MainWindow
         logging.info("成功导入主窗口模块")
     except Exception as e:
         logging.error(f"导入主窗口模块失败: {e}")
         import traceback
         logging.error(f"错误堆栈: {traceback.format_exc()}")
-        from fisherman.gui.minimal_window import MinimalWindow
+        from gui.minimal_window import MinimalWindow
         MainWindow = MinimalWindow
 else:
-    from fisherman.gui.minimal_window import MinimalWindow
+    from gui.minimal_window import MinimalWindow
     MainWindow = MinimalWindow
 
 # 配置日志系统
