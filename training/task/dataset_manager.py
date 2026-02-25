@@ -15,6 +15,7 @@ from global_support.database import db_manager, TrainingTask
 
 from ..core.interfaces import IDatasetManager
 from ..core.base_manager import BaseManager
+from ..dataset_path_manager import DatasetPathManager
 
 # 日志配置
 logger = logging.getLogger(__name__)
@@ -26,14 +27,16 @@ class DatasetManager(IDatasetManager, BaseManager):
     def __init__(self):
         """初始化数据集管理器"""
         super().__init__()
+        # 确保基础目录存在
+        DatasetPathManager.ensure_directories()
         
     def import_images(self, task_id: int, image_paths: List[str]) -> int:
-        """导入图片到训练任务
-        
+        """导入图片到训练任务（复制方式）
+
         Args:
             task_id: 任务ID
             image_paths: 图片路径列表
-            
+
         Returns:
             成功导入的图片数量
         """
@@ -43,51 +46,86 @@ class DatasetManager(IDatasetManager, BaseManager):
             if not task:
                 self.log_operation("error", f"任务不存在: {task_id}")
                 return 0
-                
-            task_dir = os.path.join("training_data", task.task_name)
-            target_dir = os.path.join(task_dir, "dataset/images/train")
-            
-            # 确保目标目录存在
-            os.makedirs(target_dir, exist_ok=True)
-            
+
+            # 创建训练集目录结构
+            dataset_path = DatasetPathManager.create_dataset_dirs(task.task_name)
+            images_dir = DatasetPathManager.get_images_path(task.task_name)
+
             imported_count = 0
             for image_path in image_paths:
                 if os.path.exists(image_path):
                     # 获取文件名
                     filename = os.path.basename(image_path)
-                    target_path = os.path.join(target_dir, filename)
-                    
-                    # 复制文件
-                    shutil.copy2(image_path, target_path)
+                    target_path = images_dir / filename
+
+                    # 复制文件到训练集目录
+                    shutil.copy2(image_path, str(target_path))
                     imported_count += 1
-                    
+
                     self.log_operation("debug", f"图片导入成功: {filename}")
                 else:
                     self.log_operation("error", f"图片文件不存在: {image_path}")
-                    
+
             # 更新任务状态
             if imported_count > 0:
                 if task.status == "pending":
                     task.status = "ready"
                     session.commit()
-                    
-                self.log_operation("info", f"图片导入完成: 成功导入 {imported_count} 张图片")
-                
+
+                self.log_operation("info", f"图片导入完成: 成功导入 {imported_count} 张图片到 {dataset_path}")
+
             return imported_count
-            
+
+        except Exception as e:
+            self.log_operation("error", f"导入图片失败: {str(e)}", exc_info=True)
+            return 0
+
+        finally:
+            session.close()
+
+    def import_images_to_dataset(self, dataset_name: str, image_paths: List[str]) -> int:
+        """直接导入图片到指定训练集（不通过数据库）
+
+        Args:
+            dataset_name: 训练集名称
+            image_paths: 图片路径列表
+
+        Returns:
+            成功导入的图片数量
+        """
+        try:
+            # 创建训练集目录结构
+            dataset_path = DatasetPathManager.create_dataset_dirs(dataset_name)
+            images_dir = DatasetPathManager.get_images_path(dataset_name)
+
+            imported_count = 0
+            for image_path in image_paths:
+                if os.path.exists(image_path):
+                    # 获取文件名
+                    filename = os.path.basename(image_path)
+                    target_path = images_dir / filename
+
+                    # 复制文件
+                    shutil.copy2(image_path, str(target_path))
+                    imported_count += 1
+
+                    self.log_operation("debug", f"图片导入成功: {filename}")
+                else:
+                    self.log_operation("error", f"图片文件不存在: {image_path}")
+
+            self.log_operation("info", f"图片导入完成: 成功导入 {imported_count} 张图片到 {dataset_path}")
+            return imported_count
+
         except Exception as e:
             self.log_operation("error", f"导入图片失败: {str(e)}", exc_info=True)
             return 0
             
-        finally:
-            session.close()
-            
     def get_dataset_info(self, task_id: int) -> Optional[Dict[str, Any]]:
         """获取数据集信息
-        
+
         Args:
             task_id: 任务ID
-            
+
         Returns:
             数据集信息字典，包含以下字段：
             - total_images: 总图片数
@@ -100,51 +138,93 @@ class DatasetManager(IDatasetManager, BaseManager):
             task = session.query(TrainingTask).filter_by(id=task_id).first()
             if not task:
                 return None
-                
-            dataset_info = {
-                "total_images": 0,
-                "annotated_images": 0,
-                "annotation_progress": 0,
-                "dataset_path": task.dataset_path
+
+            # 使用新的路径管理器
+            dataset_info = DatasetPathManager.get_dataset_info(task.task_name)
+
+            if not dataset_info:
+                return {
+                    "total_images": 0,
+                    "annotated_images": 0,
+                    "annotation_progress": 0,
+                    "dataset_path": str(DatasetPathManager.get_dataset_path(task.task_name))
+                }
+
+            # 计算标注进度
+            total_images = dataset_info["image_count"]
+            label_count = dataset_info["label_count"]
+            annotation_progress = (label_count / total_images * 100) if total_images > 0 else 0
+
+            return {
+                "total_images": total_images,
+                "annotated_images": label_count,
+                "annotation_progress": annotation_progress,
+                "dataset_path": dataset_info["path"]
             }
-            
-            # 获取图片目录
-            image_dir = os.path.join(os.path.dirname(task.dataset_path), "images", "train")
-            label_dir = os.path.join(os.path.dirname(task.dataset_path), "labels", "train")
-            
-            if os.path.exists(image_dir):
-                image_files = [f for f in os.listdir(image_dir) 
-                             if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
-                dataset_info["total_images"] = len(image_files)
-                
-                # 获取标注信息
-                if os.path.exists(label_dir):
-                    annotated_count = 0
-                    for img_file in image_files:
-                        txt_file = os.path.splitext(img_file)[0] + ".txt"
-                        if os.path.exists(os.path.join(label_dir, txt_file)):
-                            annotated_count += 1
-                    
-                    dataset_info["annotated_images"] = annotated_count
-                    
-                    if len(image_files) > 0:
-                        dataset_info["annotation_progress"] = (annotated_count / len(image_files)) * 100
-            
-            return dataset_info
-            
+
         except Exception as e:
             self.log_operation("error", f"获取数据集信息失败: {str(e)}", exc_info=True)
             return None
-            
+
         finally:
             session.close()
+
+    def get_dataset_info_by_name(self, dataset_name: str) -> Optional[Dict[str, Any]]:
+        """根据训练集名称获取数据集信息
+
+        Args:
+            dataset_name: 训练集名称
+
+        Returns:
+            数据集信息字典
+        """
+        try:
+            dataset_info = DatasetPathManager.get_dataset_info(dataset_name)
+
+            if not dataset_info:
+                return None
+
+            # 计算标注进度
+            total_images = dataset_info["image_count"]
+            label_count = dataset_info["label_count"]
+            annotation_progress = (label_count / total_images * 100) if total_images > 0 else 0
+
+            return {
+                "total_images": total_images,
+                "annotated_images": label_count,
+                "annotation_progress": annotation_progress,
+                "dataset_path": dataset_info["path"],
+                "has_weights": dataset_info["has_weights"]
+            }
+
+        except Exception as e:
+            self.log_operation("error", f"获取数据集信息失败: {str(e)}", exc_info=True)
+            return None
+
+    def list_all_datasets(self) -> List[Dict[str, Any]]:
+        """列出所有训练集信息
+
+        Returns:
+            训练集信息列表
+        """
+        try:
+            datasets = DatasetPathManager.list_datasets()
+            result = []
+            for name in datasets:
+                info = self.get_dataset_info_by_name(name)
+                if info:
+                    result.append(info)
+            return result
+        except Exception as e:
+            self.log_operation("error", f"列出训练集失败: {str(e)}", exc_info=True)
+            return []
             
     def get_image_list(self, task_id: int) -> List[str]:
         """获取任务的图片列表
-        
+
         Args:
             task_id: 任务ID
-            
+
         Returns:
             图片文件名列表
         """
@@ -153,30 +233,46 @@ class DatasetManager(IDatasetManager, BaseManager):
             task = session.query(TrainingTask).filter_by(id=task_id).first()
             if not task:
                 return []
-                
-            image_dir = os.path.join(os.path.dirname(task.dataset_path), "images", "train")
-            
-            if not os.path.exists(image_dir):
-                return []
-                
-            image_files = [f for f in os.listdir(image_dir) 
-                         if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
-            
-            return sorted(image_files)
-            
+
+            return self.get_image_list_by_name(task.task_name)
+
         except Exception as e:
             self.log_operation("error", f"获取图片列表失败: {str(e)}", exc_info=True)
             return []
-            
+
         finally:
             session.close()
-            
+
+    def get_image_list_by_name(self, dataset_name: str) -> List[str]:
+        """根据训练集名称获取图片列表
+
+        Args:
+            dataset_name: 训练集名称
+
+        Returns:
+            图片文件名列表
+        """
+        try:
+            images_dir = DatasetPathManager.get_images_path(dataset_name)
+
+            if not images_dir.exists():
+                return []
+
+            image_files = [f.name for f in images_dir.iterdir()
+                          if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.bmp')]
+
+            return sorted(image_files)
+
+        except Exception as e:
+            self.log_operation("error", f"获取图片列表失败: {str(e)}", exc_info=True)
+            return []
+
     def get_unannotated_images(self, task_id: int) -> List[str]:
         """获取未标注的图片列表
-        
+
         Args:
             task_id: 任务ID
-            
+
         Returns:
             未标注图片文件名列表
         """
@@ -185,29 +281,45 @@ class DatasetManager(IDatasetManager, BaseManager):
             task = session.query(TrainingTask).filter_by(id=task_id).first()
             if not task:
                 return []
-                
-            image_dir = os.path.join(os.path.dirname(task.dataset_path), "images", "train")
-            label_dir = os.path.join(os.path.dirname(task.dataset_path), "labels", "train")
-            
-            if not os.path.exists(image_dir):
-                return []
-                
-            image_files = [f for f in os.listdir(image_dir) 
-                         if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
-            
-            unannotated_images = []
-            for img_file in image_files:
-                txt_file = os.path.splitext(img_file)[0] + ".txt"
-                label_path = os.path.join(label_dir, txt_file)
-                
-                if not os.path.exists(label_path) or os.path.getsize(label_path) == 0:
-                    unannotated_images.append(img_file)
-            
-            return sorted(unannotated_images)
-            
+
+            return self.get_unannotated_images_by_name(task.task_name)
+
         except Exception as e:
             self.log_operation("error", f"获取未标注图片列表失败: {str(e)}", exc_info=True)
             return []
-            
+
         finally:
             session.close()
+
+    def get_unannotated_images_by_name(self, dataset_name: str) -> List[str]:
+        """根据训练集名称获取未标注的图片列表
+
+        Args:
+            dataset_name: 训练集名称
+
+        Returns:
+            未标注图片文件名列表
+        """
+        try:
+            images_dir = DatasetPathManager.get_images_path(dataset_name)
+            labels_dir = DatasetPathManager.get_labels_path(dataset_name)
+
+            if not images_dir.exists():
+                return []
+
+            image_files = [f for f in images_dir.iterdir()
+                          if f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.bmp')]
+
+            unannotated_images = []
+            for img_file in image_files:
+                txt_file = img_file.stem + ".txt"
+                label_path = labels_dir / txt_file
+
+                if not label_path.exists() or label_path.stat().st_size == 0:
+                    unannotated_images.append(img_file.name)
+
+            return sorted(unannotated_images)
+
+        except Exception as e:
+            self.log_operation("error", f"获取未标注图片列表失败: {str(e)}", exc_info=True)
+            return []

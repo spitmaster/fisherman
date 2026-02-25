@@ -221,10 +221,10 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 | 模块 | 完成度 | 状态 | 说明 |
 |------|--------|------|------|
 | **global_support** | 🟢 92% | ✅ 已完成 | 数据库和任务调度 |
-| **gui** | 🔄 75% | 🔄 进行中 | 主窗口和界面 |
+| **gui** | 🟢 90% | ✅ 已完成 | 主窗口和界面（含标注窗口） |
 | **recognition** | 🔄 65% | 🔄 进行中 | 屏幕识别功能 |
-| **training** | 🔄 62% | 🔄 进行中 | 训练相关功能 |
-| **training_result** | 🔄 70% | 🔄 进行中 | 模型管理 |
+| **training** | 🟢 88% | ✅ 已完成 | 训练相关功能（含完整流程） |
+| **training_result** | 🟢 75% | 🔄 进行中 | 模型管理 |
 | **main.py** | 🔄 80% | 🔄 进行中 | 主入口 |
 
 ---
@@ -242,7 +242,8 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 
 | 文件 | 功能 | 完成度 | 状态 | 待办事项 |
 |------|------|--------|------|----------|
-| main_window.py | 主窗口 | 🟢 70% | 🔄 进行中 | - 集成标注工具界面<br>- 集成训练控制面板<br>- 完善识别结果展示<br>- 添加设置页功能 |
+| main_window.py | 主窗口 | 🟢 90% | ✅ 已完成 | - 完善识别结果展示<br>- 添加设置页功能<br>- 完善训练结果管理界面 |
+| annotation_window.py | 标注窗口 | 🟢 100% | ✅ 已完成 | - |
 | minimal_window.py | 极简窗口 | 🟢 100% | ✅ 已完成 | - |
 
 ### 3. recognition - 识别模块
@@ -258,19 +259,21 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 | **core/** | 核心模块 | | | |
 | base_manager.py | 训练管理器基类 | 🟢 80% | 🔄 进行中 | - 添加更多回调接口 |
 | interfaces.py | 训练接口定义 | 🟢 85% | ✅ 已完成 | - |
+| **路径管理** | | | | |
+| dataset_path_manager.py | 训练集路径管理 | 🟢 100% | ✅ 已完成 | - |
 | **task/** | 任务管理 | | | |
 | manager.py | 训练任务管理器 | 🟢 75% | 🔄 进行中 | - 完善任务状态管理 |
 | creator.py | 任务创建器 | 🟢 70% | 🔄 进行中 | - 完善参数校验 |
-| dataset_manager.py | 数据集管理 | 🟢 70% | 🔄 进行中 | - 支持更多图片格式 |
+| dataset_manager.py | 数据集管理 | 🟢 100% | ✅ 已完成 | - |
 | status_tracker.py | 状态追踪器 | 🟢 80% | ✅ 已完成 | - |
 | **annotation/** | 标注模块 | | | |
 | manager.py | 标注管理器 | 🟢 60% | 🔄 进行中 | - 完善标注任务调度 |
-| tool.py | 标注工具 | 🟢 60% | 🔄 进行中 | - 添加更多标注类型支持<br>- 优化标注交互体验 |
+| tool.py | 标注工具 | 🟢 100% | ✅ 已完成 | Qt GUI标注工具已实现 |
 | validator.py | 标注验证器 | 🟢 70% | 🔄 进行中 | - 完善验证规则 |
 | visualizer.py | 可视化工具 | 🟢 50% | 🔄 进行中 | - 丰富可视化样式 |
 | yolo_formatter.py | YOLO格式转换 | 🟢 65% | 🔄 进行中 | - 完善格式验证 |
 | **training/** | 训练执行 | | | |
-| executor.py | 训练执行器 | 🟢 75% | 🔄 进行中 | - 添加分布式训练支持 |
+| executor.py | 训练执行器 | 🟢 100% | ✅ 已完成 | 支持训练结果同步 |
 | callback_handler.py | 回调处理 | 🟢 70% | 🔄 进行中 | - 添加更多回调事件 |
 | result_saver.py | 结果保存 | 🟢 80% | ✅ 已完成 | - |
 | yolo_trainer.py | YOLO训练器 | 🟢 65% | 🔄 进行中 | - 支持更多训练参数<br>- 添加早停机制 |
@@ -297,6 +300,52 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 ## 开发优先级建议
 
 ### 第一优先级（核心功能）
+1. ✅ global_support/database.py - 已完成
+2. ✅ global_support/task_scheduler.py - 已完成
+3. ✅ gui/main_window.py - 已完成
+4. ✅ training/dataset_path_manager.py - 已完成
+5. ✅ training/task/dataset_manager.py - 已完成
+6. ✅ training/training/executor.py - 已完成
+7. ✅ gui/annotation_window.py - 已完成
+8. 🔄 recognition/screen_recognition.py - 完善识别功能
+
+### 第二优先级（体验优化）
+1. 🔄 gui/main_window.py - 训练结果管理界面
+2. 🔄 training_result/model_manager.py - 模型管理完善
+3. 🔄 gui/main_window.py - 设置页面
+
+### 第三优先级（高级功能）
+1. 分布式训练支持
+2. 多模型协同识别
+3. 云端模型同步
+
+---
+
+## 最近更新 (2026-02-25)
+
+### 新增功能
+1. ✅ 创建 `training/dataset_path_manager.py` - 统一管理训练集路径
+2. ✅ 改造 `training/task/dataset_manager.py` - 支持复制方式导入图片
+3. ✅ 创建 `gui/annotation_window.py` - Qt图形化标注工具
+4. ✅ 改造 `training/training/executor.py` - 训练结果自动同步
+5. ✅ 完善 `gui/main_window.py` - 训练标签页集成完整流程
+
+### 目录结构
+```
+running/
+├── training/              # 训练集目录
+│   └── {训练集名称}/
+│       ├── images/       # 训练图片
+│       ├── labels/       # 标注数据(YOLO格式)
+│       ├── weights/      # 训练好的模型
+│       └── data.yaml     # 数据配置
+└── training_result/      # 训练结果管理
+    └── {模型名称}/       # 每个训练结果
+        └── best.pt       # 模型文件
+```
+
+### 使用流程
+1. 创建训练集 → 2. 导入图片 → 3. 图形化标注 → 4. 开始训练 → 5. 结果自动同步
 1. ✅ global_support/database.py - 已完成
 2. ✅ global_support/task_scheduler.py - 已完成
 3. 🔄 gui/main_window.py - 完善界面集成
