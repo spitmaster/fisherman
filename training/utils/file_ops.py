@@ -10,6 +10,8 @@ import os
 import shutil
 import yaml
 import logging
+import fnmatch
+from datetime import datetime
 
 # 日志配置
 logger = logging.getLogger(__name__)
@@ -216,3 +218,271 @@ def get_label_files(directory_path: str) -> list:
             label_files.append(filename)
             
     return sorted(label_files)
+
+
+def batch_copy_images(source_dir: str, target_dir: str, file_pattern: str = "*") -> tuple[int, list[str]]:
+    """批量复制图片文件
+    
+    Args:
+        source_dir: 源目录
+        target_dir: 目标目录
+        file_pattern: 文件匹配模式，支持通配符
+        
+    Returns:
+        成功复制的文件数量和失败的文件列表
+    """
+    if not os.path.exists(source_dir):
+        logger.error(f"源目录不存在: {source_dir}")
+        return 0, [f"源目录不存在: {source_dir}"]
+    
+    # 确保目标目录存在
+    ensure_directory_exists(target_dir)
+    
+    supported_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp')
+    failed_files = []
+    success_count = 0
+    
+    try:
+        for filename in os.listdir(source_dir):
+            file_path = os.path.join(source_dir, filename)
+            
+            # 检查是否为图片文件
+            if not filename.lower().endswith(supported_extensions):
+                continue
+                
+            # 检查文件模式匹配
+            if not fnmatch.fnmatch(filename, file_pattern):
+                continue
+                
+            try:
+                target_path = os.path.join(target_dir, filename)
+                shutil.copy2(file_path, target_path)
+                success_count += 1
+                logger.debug(f"批量复制成功: {filename}")
+                
+            except Exception as e:
+                failed_files.append(f"{filename}: {str(e)}")
+                logger.error(f"批量复制失败: {filename} - {str(e)}")
+                
+        logger.info(f"批量复制完成: 成功 {success_count} 个文件，失败 {len(failed_files)} 个文件")
+        return success_count, failed_files
+        
+    except Exception as e:
+        logger.error(f"批量复制操作异常: {str(e)}", exc_info=True)
+        return 0, [f"批量复制操作异常: {str(e)}"]
+
+
+def batch_create_directories(directory_paths: list[str]) -> tuple[int, list[str]]:
+    """批量创建目录
+    
+    Args:
+        directory_paths: 目录路径列表
+        
+    Returns:
+        成功创建的目录数量和失败的目录列表
+    """
+    failed_paths = []
+    success_count = 0
+    
+    for dir_path in directory_paths:
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+            success_count += 1
+            logger.debug(f"目录创建成功: {dir_path}")
+            
+        except Exception as e:
+            failed_paths.append(f"{dir_path}: {str(e)}")
+            logger.error(f"创建目录失败: {dir_path} - {str(e)}")
+            
+    logger.info(f"批量目录创建完成: 成功 {success_count} 个目录，失败 {len(failed_paths)} 个目录")
+    return success_count, failed_paths
+
+
+def batch_delete_files(file_paths: list[str]) -> tuple[int, list[str]]:
+    """批量删除文件
+    
+    Args:
+        file_paths: 文件路径列表
+        
+    Returns:
+        成功删除的文件数量和失败的文件列表
+    """
+    failed_files = []
+    success_count = 0
+    
+    for file_path in file_paths:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                success_count += 1
+                logger.debug(f"文件删除成功: {file_path}")
+            else:
+                logger.warning(f"文件不存在，跳过删除: {file_path}")
+                
+        except Exception as e:
+            failed_files.append(f"{file_path}: {str(e)}")
+            logger.error(f"删除文件失败: {file_path} - {str(e)}")
+            
+    logger.info(f"批量文件删除完成: 成功 {success_count} 个文件，失败 {len(failed_files)} 个文件")
+    return success_count, failed_files
+
+
+def batch_rename_files(rename_list: list[tuple[str, str]]) -> tuple[int, list[str]]:
+    """批量重命名文件
+    
+    Args:
+        rename_list: 重命名列表，每个元素为 (原路径, 新路径) 元组
+        
+    Returns:
+        成功重命名的文件数量和失败的文件列表
+    """
+    failed_renames = []
+    success_count = 0
+    
+    for old_path, new_path in rename_list:
+        try:
+            if os.path.exists(old_path):
+                os.rename(old_path, new_path)
+                success_count += 1
+                logger.debug(f"文件重命名成功: {old_path} -> {new_path}")
+            else:
+                failed_renames.append(f"{old_path}: 文件不存在")
+                logger.error(f"文件不存在，无法重命名: {old_path}")
+                
+        except Exception as e:
+            failed_renames.append(f"{old_path} -> {new_path}: {str(e)}")
+            logger.error(f"重命名文件失败: {old_path} -> {new_path} - {str(e)}")
+            
+    logger.info(f"批量文件重命名完成: 成功 {success_count} 个文件，失败 {len(failed_renames)} 个文件")
+    return success_count, failed_renames
+
+
+def batch_copy_with_progress(source_dir: str, target_dir: str, file_pattern: str = "*") -> dict:
+    """带进度监控的批量复制
+    
+    Args:
+        source_dir: 源目录
+        target_dir: 目标目录
+        file_pattern: 文件匹配模式
+        
+    Returns:
+        复制结果统计信息
+    """
+    if not os.path.exists(source_dir):
+        return {
+            "success": False,
+            "message": f"源目录不存在: {source_dir}",
+            "total_files": 0,
+            "copied_files": 0,
+            "failed_files": []
+        }
+    
+    ensure_directory_exists(target_dir)
+    
+    supported_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp')
+    
+    # 获取符合条件的文件列表
+    matching_files = []
+    for filename in os.listdir(source_dir):
+        if filename.lower().endswith(supported_extensions) and fnmatch.fnmatch(filename, file_pattern):
+            matching_files.append(filename)
+    
+    total_files = len(matching_files)
+    failed_files = []
+    copied_files = 0
+    
+    logger.info(f"开始批量复制: 共 {total_files} 个文件")
+    
+    for i, filename in enumerate(matching_files):
+        file_path = os.path.join(source_dir, filename)
+        target_path = os.path.join(target_dir, filename)
+        
+        try:
+            shutil.copy2(file_path, target_path)
+            copied_files += 1
+            
+            # 记录进度（每10个文件或最后一条记录）
+            if (i + 1) % 10 == 0 or (i + 1) == total_files:
+                logger.info(f"批量复制进度: {i + 1}/{total_files} ({((i + 1) / total_files * 100):.1f}%)")
+                
+        except Exception as e:
+            failed_files.append(f"{filename}: {str(e)}")
+            logger.error(f"复制失败: {filename} - {str(e)}")
+    
+    result = {
+        "success": True,
+        "message": f"批量复制完成: 成功 {copied_files}/{total_files} 个文件",
+        "total_files": total_files,
+        "copied_files": copied_files,
+        "failed_files": failed_files
+    }
+    
+    logger.info(result["message"])
+    return result
+
+
+def validate_directory_structure(base_dir: str, expected_structure: list[str]) -> dict:
+    """验证目录结构
+    
+    Args:
+        base_dir: 基础目录
+        expected_structure: 期望的目录结构列表
+        
+    Returns:
+        验证结果
+    """
+    missing_dirs = []
+    existing_dirs = []
+    
+    for subdir in expected_structure:
+        dir_path = os.path.join(base_dir, subdir)
+        if os.path.exists(dir_path) and os.path.isdir(dir_path):
+            existing_dirs.append(subdir)
+        else:
+            missing_dirs.append(subdir)
+    
+    return {
+        "valid": len(missing_dirs) == 0,
+        "base_dir": base_dir,
+        "total_expected": len(expected_structure),
+        "existing_dirs": existing_dirs,
+        "missing_dirs": missing_dirs,
+        "message": f"目录结构验证: 存在 {len(existing_dirs)} 个目录，缺失 {len(missing_dirs)} 个目录"
+    }
+
+
+def create_backup(source_path: str, backup_dir: str, backup_name: str = None) -> str:
+    """创建文件或目录备份
+    
+    Args:
+        source_path: 源路径
+        backup_dir: 备份目录
+        backup_name: 备份名称，如果为None则使用时间戳
+        
+    Returns:
+        备份路径
+    """
+    ensure_directory_exists(backup_dir)
+    
+    if backup_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if os.path.isfile(source_path):
+            base_name = os.path.basename(source_path)
+            backup_name = f"{base_name}_{timestamp}"
+        else:
+            backup_name = f"backup_{timestamp}"
+    
+    backup_path = os.path.join(backup_dir, backup_name)
+    
+    try:
+        if os.path.isfile(source_path):
+            shutil.copy2(source_path, backup_path)
+        else:
+            shutil.copytree(source_path, backup_path)
+        
+        logger.info(f"备份创建成功: {source_path} -> {backup_path}")
+        return backup_path
+        
+    except Exception as e:
+        logger.error(f"创建备份失败: {str(e)}", exc_info=True)
+        raise

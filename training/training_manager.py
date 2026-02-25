@@ -20,8 +20,10 @@ import shutil
 import yaml
 import cv2
 import numpy as np
+import time
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Any, Callable
 from ultralytics import YOLO
 # from ultralytics.utils.ops import non_max_suppression  # Not available in ultralytics 8.x
 from ultralytics.engine.results import Results
@@ -783,24 +785,44 @@ class TrainingManager:
             task_info: 任务信息
         """
         try:
-            # 加载YOLO模型
-            model = YOLO("yolov8n.pt")
+            # 导入训练模块
+            from .training.yolo_trainer import YOLOTrainer
             
-            # 训练模型
+            # 创建训练器实例
+            trainer = YOLOTrainer()
+            
+            # 配置训练参数
             data_config = os.path.join(task_info["task_dir"], "data.yaml")
+            training_config = {
+                "data": data_config,
+                "epochs": scheduler_task.epochs,
+                "batch": scheduler_task.batch_size,
+                "imgsz": 640,
+                "project": task_info["task_dir"],
+                "name": "yolo_training",
+                "exist_ok": True,
+                "verbose": True,
+                "device": "cpu",  # 使用CPU训练，避免CUDA依赖
+                "workers": 1,
+                "patience": min(50, scheduler_task.epochs // 3),  # 早停机制
+                "lr0": 0.01,
+                "lrf": 0.01
+            }
             
-            results = model.train(
-                data=data_config,
-                epochs=scheduler_task.epochs,
-                batch=scheduler_task.batch_size,
-                imgsz=640,
-                device="cpu",  # 使用CPU训练，避免CUDA依赖
-                workers=1,
-                verbose=True
-            )
+            # 注册进度回调
+            def progress_callback(progress: float, message: str = ""):
+                scheduler_task.update_progress(progress, message)
+                
+            # 执行训练
+            logger.info(f"开始执行训练任务: {scheduler_task.task_name}")
+            result = trainer.train(training_config, progress_callback)
             
-            # 保存训练结果
-            self._save_training_result(scheduler_task.task_id, results)
+            if result["success"]:
+                # 保存训练结果
+                self._save_training_result(scheduler_task.task_id, result["results"])
+                scheduler_task.complete(result["results"])
+            else:
+                scheduler_task.fail(result["error"])
             
         except Exception as e:
             logger.error(f"训练任务执行错误: {str(e)}", exc_info=True)
@@ -1080,6 +1102,359 @@ class TrainingManager:
         }
         
         return progress_info
+
+    def validate_training_task(self, task_id: int) -> tuple[bool, str]:
+        """验证训练任务是否可以进行训练
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            验证结果和错误信息
+        """
+        try:
+            # 获取任务信息
+            task_info = self.get_training_task_by_id(task_id)
+            if not task_info:
+                return False, f"训练任务不存在: {task_id}"
+            
+            # 检查任务状态
+            if task_info["status"] not in ["pending", "annotating"]:
+                return False, f"任务状态不适合开始训练: {task_info['status']}"
+            
+            # 检查标注数据是否足够
+            if task_info["annotated_images"] == 0:
+                return False, "标注数据不足，无法开始训练"
+            
+            # 检查数据集配置
+            dataset_info = self.get_dataset_info(task_id)
+            if not dataset_info or dataset_info["total_images"] == 0:
+                return False, "数据集为空，无法开始训练"
+            
+            # 检查YAML配置文件
+            task_dir = os.path.join("training_data", task_info["task_name"])
+            yaml_path = os.path.join(task_dir, "data.yaml")
+            if not os.path.exists(yaml_path):
+                return False, f"数据配置文件不存在: {yaml_path}"
+            
+            # 检查模型输出目录
+            models_dir = os.path.join(task_dir, "models")
+            if not os.path.exists(models_dir):
+                os.makedirs(models_dir, exist_ok=True)
+            
+            return True, "任务验证通过"
+            
+        except Exception as e:
+            error_msg = f"验证训练任务失败: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return False, error_msg
+    
+    def create_backup(self, task_id: int) -> str:
+        """为训练任务创建备份
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            备份路径
+        """
+        try:
+            task_info = self.get_training_task_by_id(task_id)
+            if not task_info:
+                logger.error(f"训练任务不存在: {task_id}")
+                return ""
+            
+            task_dir = os.path.join("training_data", task_info["task_name"])
+            backup_dir = os.path.join(task_dir, "backup")
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"task_backup_{timestamp}"
+            backup_path = os.path.join(backup_dir, backup_name)
+            
+            # 备份标签目录
+            label_dir = os.path.join(task_dir, "dataset/labels/train")
+            if os.path.exists(label_dir):
+                import shutil
+                shutil.copytree(label_dir, backup_path)
+                logger.info(f"训练任务备份创建成功: {backup_path}")
+                return backup_path
+            else:
+                logger.warning("标签目录不存在，无法创建备份")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"创建备份失败: {str(e)}", exc_info=True)
+            return ""
+    
+    def restore_backup(self, task_id: int, backup_path: str) -> bool:
+        """从备份恢复训练任务
+        
+        Args:
+            task_id: 任务ID
+            backup_path: 备份路径
+            
+        Returns:
+            恢复是否成功
+        """
+        try:
+            if not os.path.exists(backup_path):
+                logger.error(f"备份文件不存在: {backup_path}")
+                return False
+            
+            task_info = self.get_training_task_by_id(task_id)
+            if not task_info:
+                logger.error(f"训练任务不存在: {task_id}")
+                return False
+            
+            task_dir = os.path.join("training_data", task_info["task_name"])
+            label_dir = os.path.join(task_dir, "dataset/labels/train")
+            
+            # 创建当前备份
+            current_backup = self.create_backup(task_id)
+            if current_backup:
+                logger.info(f"当前数据已备份到: {current_backup}")
+            
+            # 恢复备份
+            if os.path.exists(label_dir):
+                import shutil
+                shutil.rmtree(label_dir)
+            
+            shutil.copytree(backup_path, label_dir)
+            logger.info(f"训练任务恢复成功: {backup_path}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"恢复备份失败: {str(e)}", exc_info=True)
+            return False
+    
+    def get_training_statistics(self, task_id: int) -> Dict[str, Any]:
+        """获取训练任务的统计信息
+        
+        Args:
+            task_id: 任务ID
+            
+        Returns:
+            统计信息字典
+        """
+        try:
+            task_info = self.get_training_task_by_id(task_id)
+            if not task_info:
+                return {}
+            
+            dataset_info = self.get_dataset_info(task_id)
+            if not dataset_info:
+                return {}
+            
+            statistics = {
+                "task_id": task_id,
+                "task_name": task_info["task_name"],
+                "status": task_info["status"],
+                "created_at": task_info["created_at"].strftime("%Y-%m-%d %H:%M:%S") if task_info["created_at"] else "",
+                "total_images": dataset_info["total_images"],
+                "annotated_images": dataset_info["annotated_images"],
+                "annotation_progress": 0,
+                "training_metrics": {}
+            }
+            
+            if dataset_info["total_images"] > 0:
+                statistics["annotation_progress"] = (
+                    dataset_info["annotated_images"] / dataset_info["total_images"] * 100
+                )
+            
+            # 添加训练指标
+            if task_info["status"] in ["completed", "failed"]:
+                statistics["training_metrics"] = {
+                    "mAP": task_info.get("mAP", 0),
+                    "loss": task_info.get("loss", 0)
+                }
+            
+            return statistics
+            
+        except Exception as e:
+            logger.error(f"获取训练统计信息失败: {str(e)}", exc_info=True)
+            return {}
+    
+    def batch_validate_tasks(self) -> Dict[str, Any]:
+        """批量验证所有训练任务
+        
+        Returns:
+            验证结果字典
+        """
+        validation_result = {
+            "total_tasks": 0,
+            "valid_tasks": 0,
+            "invalid_tasks": 0,
+            "errors": {}
+        }
+        
+        try:
+            all_tasks = self.get_all_training_tasks()
+            validation_result["total_tasks"] = len(all_tasks)
+            
+            for task in all_tasks:
+                task_id = task["id"]
+                is_valid, error_msg = self.validate_training_task(task_id)
+                
+                if is_valid:
+                    validation_result["valid_tasks"] += 1
+                else:
+                    validation_result["invalid_tasks"] += 1
+                    validation_result["errors"][task_id] = error_msg
+            
+            logger.info(f"批量验证完成: 共{validation_result['total_tasks']}个任务，"
+                        f"有效{validation_result['valid_tasks']}个，"
+                        f"无效{validation_result['invalid_tasks']}个")
+            
+            return validation_result
+            
+        except Exception as e:
+            logger.error(f"批量验证任务失败: {str(e)}", exc_info=True)
+            return {"total_tasks": 0, "valid_tasks": 0, "invalid_tasks": 0, "errors": {}}
+    
+    def _enhanced_error_handling(self, operation: str, task_id: int = None) -> Callable:
+        """增强的错误处理装饰器
+        
+        Args:
+            operation: 操作名称
+            task_id: 任务ID（可选）
+            
+        Returns:
+            装饰器函数
+        """
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                try:
+                    logger.info(f"开始执行操作: {operation}")
+                    
+                    # 记录操作开始时间
+                    start_time = time.time()
+                    
+                    # 执行操作
+                    result = func(*args, **kwargs)
+                    
+                    # 记录操作完成时间
+                    end_time = time.time()
+                    duration = end_time - start_time
+                    
+                    logger.info(f"操作完成: {operation}, 耗时: {duration:.2f}秒")
+                    
+                    return result
+                    
+                except Exception as e:
+                    error_msg = f"操作失败: {operation} - {str(e)}"
+                    
+                    # 记录错误日志
+                    logger.error(error_msg, exc_info=True)
+                    
+                    # 更新任务状态（如果提供了任务ID）
+                    if task_id:
+                        try:
+                            session = db_manager.get_session()
+                            training_task = session.get(TrainingTask, task_id)
+                            if training_task:
+                                training_task.status = "failed"
+                                session.commit()
+                        except Exception as db_error:
+                            logger.error(f"更新任务状态失败: {str(db_error)}")
+                    
+                    # 返回错误结果
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "operation": operation
+                    }
+            
+            return wrapper
+        
+        return decorator
+    
+    def _validate_training_config(self, config: Dict[str, Any]) -> tuple[bool, str]:
+        """验证训练配置参数
+        
+        Args:
+            config: 训练配置字典
+            
+        Returns:
+            验证结果和错误信息
+        """
+        # 必需参数检查
+        required_params = ["epochs", "batch_size"]
+        for param in required_params:
+            if param not in config:
+                return False, f"缺少必需参数: {param}"
+        
+        # 参数范围验证
+        if config["epochs"] <= 0:
+            return False, "epochs必须大于0"
+        
+        if config["batch_size"] <= 0:
+            return False, "batch_size必须大于0"
+        
+        # 学习率验证（如果提供）
+        if "learning_rate" in config and config["learning_rate"] <= 0:
+            return False, "learning_rate必须大于0"
+        
+        return True, "配置验证通过"
+    
+    def _create_enhanced_training_config(self, task_info: Dict[str, Any]) -> Dict[str, Any]:
+        """创建增强的训练配置
+        
+        Args:
+            task_info: 任务信息
+            
+        Returns:
+            增强的训练配置
+        """
+        config = {
+            "data": os.path.join("training_data", task_info["task_name"], "data.yaml"),
+            "epochs": task_info.get("epochs", 50),
+            "batch": task_info.get("batch_size", 8),
+            "imgsz": 640,
+            "project": os.path.join("training_data", task_info["task_name"]),
+            "name": "yolo_training",
+            "exist_ok": True,
+            "verbose": True
+        }
+        
+        # 添加高级训练参数
+        advanced_params = {
+            "patience": min(50, task_info.get("epochs", 50) // 3),  # 早停机制
+            "lr0": 0.01,  # 初始学习率
+            "lrf": 0.01,  # 最终学习率因子
+            "device": self._detect_available_device(),  # 自动检测设备
+            "workers": 1,  # 工作线程数
+            "optimizer": "auto",  # 优化器
+            "weight_decay": 0.0005,  # 权重衰减
+            "momentum": 0.937,  # 动量
+            "warmup_epochs": 3.0,  # 预热轮次
+            "warmup_momentum": 0.8,  # 预热动量
+            "warmup_bias_lr": 0.1  # 预热偏置学习率
+        }
+        
+        config.update(advanced_params)
+        return config
+    
+    def _detect_available_device(self) -> str:
+        """检测可用设备
+        
+        Returns:
+            设备字符串
+        """
+        try:
+            import torch
+            
+            if torch.cuda.is_available():
+                return "cuda:0"
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                return "mps"
+            else:
+                return "cpu"
+                
+        except ImportError:
+            return "cpu"
+
 
 # 全局训练管理器实例
 training_manager = TrainingManager()
