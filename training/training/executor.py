@@ -357,3 +357,42 @@ names:
                 return {"precision": 0, "recall": 0, "mAP50": 0, "mAP50-95": 0}
         except:
             return {"precision": 0, "recall": 0, "mAP50": 0, "mAP50-95": 0}
+
+    def save_training_result(self, task_id: int, result: Dict[str, Any]) -> bool:
+        """保存训练结果
+
+        Args:
+            task_id: 任务ID
+            result: 训练结果字典
+
+        Returns:
+            保存是否成功
+        """
+        session = db_manager.get_session()
+        try:
+            task = session.query(TrainingTask).filter_by(id=task_id).first()
+            if not task:
+                self.log_operation("error", f"任务不存在: {task_id}")
+                return False
+
+            # 保存结果到数据库
+            model_version = ModelVersion(
+                task_id=task_id,
+                model_path=result.get("model_path"),
+                version="1.0",
+                metrics=result.get("metrics", {})
+            )
+
+            session.add(model_version)
+            session.commit()
+
+            self.log_operation("info", f"训练结果保存成功: 任务 {task_id}, 模型版本 {model_version.id}")
+            return True
+
+        except Exception as e:
+            self.log_operation("error", f"保存训练结果失败: {str(e)}", exc_info=True)
+            session.rollback()
+            return False
+
+        finally:
+            session.close()

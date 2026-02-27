@@ -17,11 +17,12 @@ import sys
 import logging
 from datetime import datetime
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QTabWidget, QPushButton, QLabel, QTextEdit, QGroupBox, QSplitter
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QTabWidget, QPushButton, QLabel, QTextEdit, QGroupBox, QSplitter,
+    QMessageBox, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont, QIcon, QColor
 
 from training.training_manager import training_manager
 from training.annotation_tool import annotation_manager
@@ -95,7 +96,7 @@ class MainWindow(QMainWindow):
         training_widget = QWidget()
         training_layout = QVBoxLayout(training_widget)
 
-        # 训练集管理区域（优先级更高）
+        # 训练集管理区域
         dataset_group = QGroupBox("训练集管理")
         dataset_layout = QVBoxLayout(dataset_group)
 
@@ -103,184 +104,36 @@ class MainWindow(QMainWindow):
         dataset_button_layout = QHBoxLayout()
         self.btn_create_dataset = QPushButton("新建训练集")
         self.btn_create_dataset.clicked.connect(self.create_dataset)
-        self.btn_delete_dataset = QPushButton("删除训练集")
-        self.btn_delete_dataset.clicked.connect(self.delete_dataset)
         dataset_button_layout.addWidget(self.btn_create_dataset)
-        dataset_button_layout.addWidget(self.btn_delete_dataset)
         dataset_layout.addLayout(dataset_button_layout)
 
-        # 训练集列表
-        from PyQt5.QtWidgets import QListWidget
-        self.dataset_list_widget = QListWidget()
-        self.dataset_list_widget.itemClicked.connect(self.on_dataset_selected)
-        dataset_layout.addWidget(self.dataset_list_widget)
+        # 训练集表格（带按钮列）
+        from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
+        self.dataset_table = QTableWidget()
+        self.dataset_table.setColumnCount(6)
+        self.dataset_table.setHorizontalHeaderLabels(["名称", "备注", "总图片数", "已标注", "标注进度", "操作"])
+        # 名称列调窄
+        self.dataset_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.dataset_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.dataset_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.dataset_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.dataset_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.dataset_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.dataset_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.dataset_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.dataset_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.dataset_table.verticalHeader().setVisible(False)
+        self.dataset_table.cellDoubleClicked.connect(self.on_dataset_double_clicked)
 
-        # 数据集信息
-        dataset_info_layout = QHBoxLayout()
-        self.label_dataset_name = QLabel("训练集名称:")
-        self.label_total_images = QLabel("总图片数: 0")
-        self.label_annotated_count = QLabel("已标注: 0")
-        self.label_unannotated_count = QLabel("未标注: 0")
-        self.label_annotation_progress = QLabel("标注进度: 0%")
-        dataset_info_layout.addWidget(self.label_dataset_name)
-        dataset_info_layout.addWidget(self.label_total_images)
-        dataset_info_layout.addWidget(self.label_annotated_count)
-        dataset_info_layout.addWidget(self.label_unannotated_count)
-        dataset_info_layout.addWidget(self.label_annotation_progress)
-        dataset_layout.addLayout(dataset_info_layout)
-
-        # 训练集功能按钮
-        dataset_func_layout = QHBoxLayout()
-        self.btn_import_images = QPushButton("导入图片")
-        self.btn_import_images.clicked.connect(self.import_images_to_dataset)
-        self.btn_start_annotation = QPushButton("开始标注")
-        self.btn_start_annotation.clicked.connect(self.start_annotation)
-        dataset_func_layout.addWidget(self.btn_import_images)
-        dataset_func_layout.addWidget(self.btn_start_annotation)
-        dataset_layout.addLayout(dataset_func_layout)
+        # 表格占满整个区域
+        dataset_layout.addWidget(self.dataset_table)
 
         training_layout.addWidget(dataset_group)
-
-        # 训练区域
-        training_group = QGroupBox("训练功能")
-        training_layout_group = QVBoxLayout(training_group)
-
-        # 训练参数设置
-        training_params_layout = QHBoxLayout()
-        self.label_epochs = QLabel("训练轮数:")
-        from PyQt5.QtWidgets import QSpinBox
-        self.spin_epochs = QSpinBox()
-        self.spin_epochs.setMinimum(1)
-        self.spin_epochs.setMaximum(200)
-        self.spin_epochs.setValue(50)
-
-        self.label_batch_size = QLabel("批次大小:")
-        self.spin_batch_size = QSpinBox()
-        self.spin_batch_size.setMinimum(1)
-        self.spin_batch_size.setMaximum(32)
-        self.spin_batch_size.setValue(8)
-
-        self.label_model_type = QLabel("模型类型:")
-        from PyQt5.QtWidgets import QComboBox
-        self.combo_model_type = QComboBox()
-        self.combo_model_type.addItems(["yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov8l.pt"])
-        self.combo_model_type.setCurrentText("yolov8n.pt")
-
-        training_params_layout.addWidget(self.label_epochs)
-        training_params_layout.addWidget(self.spin_epochs)
-        training_params_layout.addWidget(self.label_batch_size)
-        training_params_layout.addWidget(self.spin_batch_size)
-        training_params_layout.addWidget(self.label_model_type)
-        training_params_layout.addWidget(self.combo_model_type)
-        training_layout_group.addLayout(training_params_layout)
-
-        # 训练操作按钮
-        training_button_layout = QHBoxLayout()
-        self.btn_start_training = QPushButton("开始训练")
-        self.btn_start_training.clicked.connect(self.start_training)
-        self.btn_start_training.setEnabled(False)
-        training_button_layout.addWidget(self.btn_start_training)
-        training_layout_group.addLayout(training_button_layout)
-
-        training_layout.addWidget(training_group)
+        training_layout.setStretch(0, 1)  # 训练集组拉伸占满空间
 
         # 加载训练集列表
         self.load_datasets()
 
-        self.tabs.addTab(training_widget, "训练")
-        
-        # 训练集管理区域
-        dataset_group = QGroupBox("训练集管理")
-        dataset_layout = QVBoxLayout(dataset_group)
-        
-        # 训练集操作按钮
-        dataset_button_layout = QHBoxLayout()
-        self.btn_import_images = QPushButton("导入图片")
-        self.btn_import_images.clicked.connect(self.import_images)
-        self.btn_clear_dataset = QPushButton("清空数据集")
-        self.btn_clear_dataset.clicked.connect(self.clear_dataset)
-        dataset_button_layout.addWidget(self.btn_import_images)
-        dataset_button_layout.addWidget(self.btn_clear_dataset)
-        dataset_layout.addLayout(dataset_button_layout)
-        
-        # 数据集信息
-        dataset_info_layout = QHBoxLayout()
-        self.label_total_images = QLabel("总图片数: 0")
-        self.label_annotated_count = QLabel("已标注: 0")
-        self.label_unannotated_count = QLabel("未标注: 0")
-        self.label_annotation_progress = QLabel("标注进度: 0%")
-        dataset_info_layout.addWidget(self.label_total_images)
-        dataset_info_layout.addWidget(self.label_annotated_count)
-        dataset_info_layout.addWidget(self.label_unannotated_count)
-        dataset_info_layout.addWidget(self.label_annotation_progress)
-        dataset_layout.addLayout(dataset_info_layout)
-        
-        training_layout.addWidget(dataset_group)
-        
-        # 标注区域
-        annotation_group = QGroupBox("标注功能")
-        annotation_layout = QVBoxLayout(annotation_group)
-        
-        # 创建标注操作按钮
-        annotation_button_layout = QHBoxLayout()
-        self.btn_start_annotation = QPushButton("开始标注")
-        self.btn_start_annotation.clicked.connect(self.start_annotation)
-        self.btn_start_annotation.setEnabled(False)
-        self.btn_view_annotations = QPushButton("查看标注")
-        self.btn_view_annotations.clicked.connect(self.view_annotations)
-        self.btn_view_annotations.setEnabled(False)
-        annotation_button_layout.addWidget(self.btn_start_annotation)
-        annotation_button_layout.addWidget(self.btn_view_annotations)
-        annotation_layout.addLayout(annotation_button_layout)
-        
-        # 标注快捷键说明
-        annotation_hint = QLabel("快捷键: S 保存 / D 下一张 / A 回退 / Q 退出")
-        annotation_layout.addWidget(annotation_hint)
-        
-        training_layout.addWidget(annotation_group)
-        
-        # 训练区域
-        training_group = QGroupBox("训练功能")
-        training_layout_group = QVBoxLayout(training_group)
-        
-        # 训练参数设置
-        training_params_layout = QHBoxLayout()
-        self.label_epochs = QLabel("训练轮数:")
-        from PyQt5.QtWidgets import QSpinBox
-        self.spin_epochs = QSpinBox()
-        self.spin_epochs.setMinimum(1)
-        self.spin_epochs.setMaximum(200)
-        self.spin_epochs.setValue(50)
-        
-        self.label_batch_size = QLabel("批次大小:")
-        self.spin_batch_size = QSpinBox()
-        self.spin_batch_size.setMinimum(1)
-        self.spin_batch_size.setMaximum(32)
-        self.spin_batch_size.setValue(8)
-        
-        training_params_layout.addWidget(self.label_epochs)
-        training_params_layout.addWidget(self.spin_epochs)
-        training_params_layout.addWidget(self.label_batch_size)
-        training_params_layout.addWidget(self.spin_batch_size)
-        training_layout_group.addLayout(training_params_layout)
-        
-        # 训练操作按钮
-        training_button_layout = QHBoxLayout()
-        self.btn_start_training = QPushButton("开始训练")
-        self.btn_start_training.clicked.connect(self.start_training)
-        self.btn_start_training.setEnabled(False)
-        self.btn_stop_training = QPushButton("停止训练")
-        self.btn_stop_training.clicked.connect(self.stop_training)
-        self.btn_stop_training.setEnabled(False)
-        training_button_layout.addWidget(self.btn_start_training)
-        training_button_layout.addWidget(self.btn_stop_training)
-        training_layout_group.addLayout(training_button_layout)
-        
-        training_layout.addWidget(training_group)
-        
-        # 加载任务列表
-        self.load_training_tasks()
-        
         self.tabs.addTab(training_widget, "训练")
         
     def create_training_result_tab(self):
@@ -415,15 +268,15 @@ class MainWindow(QMainWindow):
         
     def create_log_display(self):
         """创建日志显示区域"""
-        log_widget = QGroupBox("运行日志")
-        log_layout = QVBoxLayout(log_widget)
-        
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(200)
-        
-        log_layout.addWidget(self.log_text)
-        
+        log_widget = QGroupBox("日志")
+        log_layout = QHBoxLayout(log_widget)
+
+        # 运行日志按钮
+        self.btn_log_viewer = QPushButton("运行日志")
+        self.btn_log_viewer.clicked.connect(self.open_log_viewer)
+        log_layout.addWidget(self.btn_log_viewer)
+        log_layout.addStretch()
+
         # 将日志组件添加到主布局
         self.centralWidget().layout().addWidget(log_widget)
         
@@ -459,53 +312,116 @@ class MainWindow(QMainWindow):
         
     def load_datasets(self):
         """加载训练集列表"""
-        self.dataset_list_widget.clear()
+        self.dataset_table.setRowCount(0)
 
         from training.task.dataset_manager import DatasetManager
         from training.dataset_path_manager import DatasetPathManager
+        from PyQt5.QtWidgets import QTableWidgetItem, QPushButton, QWidget
 
         dataset_manager = DatasetManager()
         datasets = dataset_manager.list_all_datasets()
 
+        self.datasets_info = {}  # 保存训练集信息（名称 -> 备注）
+
         for dataset_info in datasets:
-            from PyQt5.QtWidgets import QListWidgetItem
-            name = dataset_info.get("dataset_path", "").split(os.sep)[-1]
+            dataset_path = dataset_info.get("dataset_path", "")
+            dataset_name = dataset_path.split(os.sep)[-1]
             has_weights = dataset_info.get("has_weights", False)
-            item = QListWidgetItem(f"{name} {'✓' if has_weights else ''}")
-            item.setData(Qt.UserRole, name)
-            self.dataset_list_widget.addItem(item)
+
+            total_images = dataset_info.get('total_images', 0)
+            annotated_images = dataset_info.get('annotated_images', 0)
+            progress = dataset_info.get('annotation_progress', 0)
+
+            row = self.dataset_table.rowCount()
+            self.dataset_table.insertRow(row)
+
+            # 名称
+            item_name = QTableWidgetItem(dataset_name)
+            self.dataset_table.setItem(row, 0, item_name)
+
+            # 备注（从文件中读取）
+            remark = self._load_dataset_remark(dataset_name)
+            item_remark = QTableWidgetItem(remark)
+            self.dataset_table.setItem(row, 1, item_remark)
+            self.datasets_info[dataset_name] = remark
+
+            # 总图片数
+            item_total = QTableWidgetItem(str(total_images))
+            item_total.setTextAlignment(Qt.AlignCenter)
+            self.dataset_table.setItem(row, 2, item_total)
+
+            # 已标注
+            item_annotated = QTableWidgetItem(str(annotated_images))
+            item_annotated.setTextAlignment(Qt.AlignCenter)
+            self.dataset_table.setItem(row, 3, item_annotated)
+
+            # 标注进度
+            item_progress = QTableWidgetItem(f"{progress:.1f}%")
+            item_progress.setTextAlignment(Qt.AlignCenter)
+            self.dataset_table.setItem(row, 4, item_progress)
+
+            # 操作按钮列
+            btn_widget = QWidget()
+            btn_layout = QHBoxLayout(btn_widget)
+            btn_layout.setContentsMargins(4, 2, 4, 2)
+
+            btn_open = QPushButton("打开详情")
+            btn_open.setStyleSheet("padding: 4px 8px;")
+            # 使用闭包绑定行号
+            btn_open.clicked.connect(lambda checked, r=row: self.open_dataset_detail(r))
+
+            btn_delete = QPushButton("删除")
+            btn_delete.setStyleSheet("padding: 4px 8px; background-color: #f44336; color: white;")
+            btn_delete.clicked.connect(lambda checked, r=row: self.delete_dataset_by_row(r))
+
+            btn_layout.addWidget(btn_open)
+            btn_layout.addWidget(btn_delete)
+            btn_layout.addStretch()
+            self.dataset_table.setCellWidget(row, 5, btn_widget)
+
+            # 如果有训练好的模型，高亮显示
+            if has_weights:
+                for col in range(5):
+                    self.dataset_table.item(row, col).setBackground(QColor(144, 238, 144, 50))
 
         logger.info(f"加载训练集成功: 共 {len(datasets)} 个训练集")
 
+    def _load_dataset_remark(self, dataset_name: str) -> str:
+        """从文件加载训练集备注"""
+        try:
+            from training.dataset_path_manager import DatasetPathManager
+
+            remark_file = DatasetPathManager.get_dataset_path(dataset_name) / "remark.txt"
+            if remark_file.exists():
+                with open(remark_file, 'r', encoding='utf-8') as f:
+                    return f.read().strip()
+            return ""
+        except:
+            return ""
+
+    def _save_dataset_remark(self, dataset_name: str, remark: str) -> bool:
+        """保存训练集备注到文件"""
+        try:
+            from training.dataset_path_manager import DatasetPathManager
+
+            remark_file = DatasetPathManager.get_dataset_path(dataset_name) / "remark.txt"
+            with open(remark_file, 'w', encoding='utf-8') as f:
+                f.write(remark)
+            return True
+        except Exception as e:
+            logger.error(f"保存备注失败: {str(e)}")
+            return False
+
     def on_dataset_selected(self, item):
-        """训练集选择事件"""
-        dataset_name = item.data(Qt.UserRole)
-
-        from training.task.dataset_manager import DatasetManager
-        dataset_manager = DatasetManager()
-        dataset_info = dataset_manager.get_dataset_info_by_name(dataset_name)
-
-        if dataset_info:
-            self.label_dataset_name.setText(f"训练集名称: {dataset_name}")
-            self.label_total_images.setText(f"总图片数: {dataset_info['total_images']}")
-            self.label_annotated_count.setText(f"已标注: {dataset_info['annotated_images']}")
-
-            unannotated = dataset_info['total_images'] - dataset_info['annotated_images']
-            self.label_unannotated_count.setText(f"未标注: {unannotated}")
-
-            progress = dataset_info['annotation_progress']
-            self.label_annotation_progress.setText(f"标注进度: {progress:.1f}%")
-
-            # 启用相应按钮
-            self.btn_start_annotation.setEnabled(dataset_info['total_images'] > 0)
-            self.btn_start_training.setEnabled(dataset_info['annotated_images'] > 0)
+        """训练集选择事件（已废弃，保留用于兼容）"""
+        pass
 
     def create_dataset(self):
         """创建新训练集"""
         logger.info("创建训练集")
         self.statusBar().showMessage("正在创建训练集...")
 
-        from PyQt5.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox
+        from PyQt5.QtWidgets import QDialog, QFormLayout, QLineEdit, QTextEdit, QDialogButtonBox
         dialog = QDialog(self)
         dialog.setWindowTitle("创建训练集")
 
@@ -515,6 +431,11 @@ class MainWindow(QMainWindow):
         dataset_name_edit.setPlaceholderText("请输入训练集名称")
         layout.addRow("训练集名称:", dataset_name_edit)
 
+        dataset_remark_edit = QTextEdit()
+        dataset_remark_edit.setPlaceholderText("请输入备注信息（可选）")
+        dataset_remark_edit.setMaximumHeight(80)
+        layout.addRow("备注:", dataset_remark_edit)
+
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(dialog.accept)
         button_box.rejected.connect(dialog.reject)
@@ -522,6 +443,7 @@ class MainWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             dataset_name = dataset_name_edit.text().strip()
+            remark = dataset_remark_edit.toPlainText().strip()
 
             if dataset_name:
                 try:
@@ -534,6 +456,10 @@ class MainWindow(QMainWindow):
 
                     # 创建训练集目录结构
                     DatasetPathManager.create_dataset_dirs(dataset_name)
+
+                    # 保存备注
+                    if remark:
+                        self._save_dataset_remark(dataset_name, remark)
 
                     self.load_datasets()
                     self.statusBar().showMessage(f"训练集创建成功: {dataset_name}")
@@ -548,12 +474,17 @@ class MainWindow(QMainWindow):
         """删除训练集"""
         logger.info("删除训练集")
 
-        current_item = self.dataset_list_widget.currentItem()
-        if not current_item:
+        # 获取选中行
+        current_row = self.dataset_table.currentRow()
+        if current_row < 0:
             self.statusBar().showMessage("请先选择要删除的训练集")
             return
 
-        dataset_name = current_item.data(Qt.UserRole)
+        item_name = self.dataset_table.item(current_row, 0)
+        if not item_name:
+            return
+
+        dataset_name = item_name.text()
 
         # 确认删除
         from PyQt5.QtWidgets import QMessageBox
@@ -574,14 +505,6 @@ class MainWindow(QMainWindow):
                     shutil.rmtree(dataset_path)
 
                 self.load_datasets()
-
-                # 重置显示信息
-                self.label_dataset_name.setText("训练集名称:")
-                self.label_total_images.setText("总图片数: 0")
-                self.label_annotated_count.setText("已标注: 0")
-                self.label_unannotated_count.setText("未标注: 0")
-                self.label_annotation_progress.setText("标注进度: 0%")
-
                 self.statusBar().showMessage(f"训练集 '{dataset_name}' 删除成功")
 
             except Exception as e:
@@ -589,44 +512,8 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"删除训练集出错: {str(e)}")
 
     def import_images_to_dataset(self):
-        """导入图片到训练集"""
-        logger.info("导入图片到训练集")
-
-        current_item = self.dataset_list_widget.currentItem()
-        if not current_item:
-            self.statusBar().showMessage("请先选择要导入图片的训练集")
-            return
-
-        dataset_name = current_item.data(Qt.UserRole)
-
-        from PyQt5.QtWidgets import QFileDialog
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "选择图片文件",
-            "",
-            "图片文件 (*.jpg *.jpeg *.png *.bmp)"
-        )
-
-        if file_paths:
-            try:
-                from training.task.dataset_manager import DatasetManager
-                dataset_manager = DatasetManager()
-                imported_count = dataset_manager.import_images_to_dataset(dataset_name, file_paths)
-
-                self.statusBar().showMessage(f"图片导入成功: 共 {imported_count} 张")
-
-                # 更新训练集信息
-                self.load_datasets()
-                for i in range(self.dataset_list_widget.count()):
-                    item = self.dataset_list_widget.item(i)
-                    if item.data(Qt.UserRole) == dataset_name:
-                        self.dataset_list_widget.setCurrentItem(item)
-                        self.on_dataset_selected(item)
-                        break
-
-            except Exception as e:
-                logger.error(f"导入图片出错: {str(e)}")
-                self.statusBar().showMessage(f"导入图片出错: {str(e)}")
+        """导入图片到训练集（已废弃，保留用于兼容）"""
+        pass
 
     def load_training_tasks(self):
         """加载训练任务列表（已废弃，保留用于兼容）"""
@@ -648,26 +535,6 @@ class MainWindow(QMainWindow):
     def on_task_selected(self, item):
         """任务选择事件（已废弃，保留用于兼容）"""
         pass
-            
-            # 更新数据集信息
-            dataset_info = training_manager.get_dataset_info(task_id)
-            if dataset_info:
-                self.label_total_images.setText(f"总图片数: {dataset_info['total_images']}")
-                self.label_annotated_count.setText(f"已标注: {dataset_info['annotated_images']}")
-                self.label_unannotated_count.setText(f"未标注: {dataset_info['unannotated_images']}")
-                progress = 0
-                if dataset_info['total_images'] > 0:
-                    progress = (dataset_info['annotated_images'] / dataset_info['total_images']) * 100
-                self.label_annotation_progress.setText(f"标注进度: {progress:.1f}%")
-            
-            # 启用相应的按钮
-            self.btn_start_annotation.setEnabled(task_info['total_images'] > 0)
-            self.btn_view_annotations.setEnabled(task_info['annotated_images'] > 0)
-            self.btn_start_training.setEnabled(task_info['annotated_images'] > 0)
-            
-            # 更新训练参数
-            self.spin_epochs.setValue(task_info['epochs'])
-            self.spin_batch_size.setValue(task_info['batch_size'])
             
     def create_training_task(self):
         """创建训练任务"""
@@ -818,117 +685,18 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.error(f"删除训练任务出错: {str(e)}")
                 self.statusBar().showMessage(f"删除训练任务出错: {str(e)}")
-                
-    def import_images(self):
-        """导入图片（已废弃）"""
-        self.import_images_to_dataset()
 
-    def clear_dataset(self):
-        """清空数据集（已废弃）"""
-        pass
-                
     def start_annotation(self):
-        """开始标注任务"""
-        logger.info("开始标注任务")
-        self.statusBar().showMessage("正在启动标注工具...")
-
-        current_item = self.dataset_list_widget.currentItem()
-        if not current_item:
-            self.statusBar().showMessage("请先选择要标注的训练集")
-            return
-
-        dataset_name = current_item.data(Qt.UserRole)
-
-        try:
-            from gui.annotation_window import open_annotation_window
-
-            # 打开标注窗口
-            open_annotation_window(dataset_name, self)
-
-            self.statusBar().showMessage("标注工具已启动")
-
-        except Exception as e:
-            logger.error(f"启动标注任务出错: {str(e)}")
-            self.statusBar().showMessage(f"启动标注任务出错: {str(e)}")
+        """开始标注任务（已废弃，保留用于兼容）"""
+        pass
 
     def view_annotations(self):
-        """查看标注"""
-        logger.info("查看标注")
-        self.start_annotation()
+        """查看标注（已废弃，保留用于兼容）"""
+        pass
 
     def start_training(self):
-        """开始训练任务"""
-        logger.info("开始训练任务")
-        self.statusBar().showMessage("正在启动训练任务...")
-
-        current_item = self.dataset_list_widget.currentItem()
-        if not current_item:
-            self.statusBar().showMessage("请先选择要训练的训练集")
-            return
-
-        dataset_name = current_item.data(Qt.UserRole)
-
-        try:
-            from training.training.executor import TrainingExecutor
-
-            # 确认开始训练
-            reply = QMessageBox.question(
-                self,
-                "确认训练",
-                f"确定要开始训练 '{dataset_name}' 吗？训练过程可能需要较长时间。",
-                QMessageBox.Yes | QMessageBox.No
-            )
-
-            if reply != QMessageBox.Yes:
-                return
-
-            # 构建训练参数
-            training_params = {
-                "epochs": self.spin_epochs.value(),
-                "batch_size": self.spin_batch_size.value(),
-                "image_size": 640,
-                "model_type": self.combo_model_type.currentText()
-            }
-
-            # 在单独线程中执行训练
-            from threading import Thread
-            executor = TrainingExecutor()
-
-            def run_training():
-                try:
-                    self.statusBar().showMessage(f"正在训练 '{dataset_name}'...")
-                    result = executor.train_by_name(dataset_name, training_params)
-
-                    if result.get("success"):
-                        QMessageBox.information(
-                            self,
-                            "训练完成",
-                            f"训练 '{dataset_name}' 完成!\n模型已保存到训练结果管理模块。"
-                        )
-                        self.statusBar().showMessage(f"训练 '{dataset_name}' 完成")
-                        self.load_datasets()
-                    else:
-                        QMessageBox.critical(
-                            self,
-                            "训练失败",
-                            f"训练失败: {result.get('error', '未知错误')}"
-                        )
-                        self.statusBar().showMessage(f"训练 '{dataset_name}' 失败")
-
-                except Exception as e:
-                    QMessageBox.critical(
-                        self,
-                        "训练错误",
-                        f"训练过程中出错: {str(e)}"
-                    )
-                    self.statusBar().showMessage(f"训练 '{dataset_name}' 出错")
-
-            thread = Thread(target=run_training, daemon=True)
-            thread.start()
-
-        except Exception as e:
-            logger.error(f"启动训练任务出错: {str(e)}")
-            self.statusBar().showMessage(f"启动训练任务出错: {str(e)}")
+        """开始训练任务（已废弃，保留用于兼容）"""
+        pass
 
     def stop_training(self):
         """停止训练任务"""
@@ -1065,3 +833,89 @@ class MainWindow(QMainWindow):
         
         logger.info("应用程序已关闭")
         event.accept()
+
+    def on_dataset_double_clicked(self, row: int, column: int):
+        """双击训练集打开详情"""
+        self.open_dataset_detail(row)
+
+    def open_dataset_detail_dialog(self, dataset_name: str, remark: str):
+        """打开训练集详情对话框"""
+        try:
+            from gui.dataset_detail_dialog import DatasetDetailDialog
+
+            dialog = DatasetDetailDialog(dataset_name, remark, self)
+            dialog.annotation_completed.connect(self.load_datasets)
+
+            dialog.exec_()
+
+            # 关闭对话框后刷新列表，因为备注可能已经被修改
+            self.load_datasets()
+
+        except Exception as e:
+            logger.error(f"打开训练集详情失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开训练集详情失败: {str(e)}")
+
+    def open_log_viewer(self):
+        """打开日志查看窗口"""
+        try:
+            from gui.log_viewer_dialog import LogViewerDialog
+
+            dialog = LogViewerDialog(self)
+            dialog.exec_()
+
+        except Exception as e:
+            logger.error(f"打开日志查看器失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开日志查看器失败: {str(e)}")
+
+    def open_dataset_detail(self, row: int):
+        """根据行号打开训练集详情"""
+        try:
+            item_name = self.dataset_table.item(row, 0)
+            item_remark = self.dataset_table.item(row, 1)
+
+            if item_name:
+                dataset_name = item_name.text()
+                remark = item_remark.text() if item_remark else ""
+                self.open_dataset_detail_dialog(dataset_name, remark)
+        except Exception as e:
+            logger.error(f"打开训练集详情失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开训练集详情失败: {str(e)}")
+
+    def delete_dataset_by_row(self, row: int):
+        """根据行号删除训练集"""
+        try:
+            item_name = self.dataset_table.item(row, 0)
+            if not item_name:
+                return
+
+            dataset_name = item_name.text()
+
+            # 二次确认
+            reply = QMessageBox.question(
+                self,
+                "确认删除",
+                f"确定要删除训练集 '{dataset_name}' 吗？\n此操作将删除所有图片和标注，不可恢复。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                try:
+                    from training.dataset_path_manager import DatasetPathManager
+                    import shutil
+
+                    dataset_path = DatasetPathManager.get_dataset_path(dataset_name)
+                    if dataset_path.exists():
+                        shutil.rmtree(dataset_path)
+
+                    self.load_datasets()
+                    self.statusBar().showMessage(f"训练集 '{dataset_name}' 删除成功")
+
+                except Exception as e:
+                    logger.error(f"删除训练集出错: {str(e)}")
+                    self.statusBar().showMessage(f"删除训练集出错: {str(e)}")
+                    QMessageBox.critical(self, "错误", f"删除训练集出错: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"删除训练集失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"删除训练集失败: {str(e)}")

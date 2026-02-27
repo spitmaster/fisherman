@@ -11,7 +11,7 @@ import os
 import logging
 import threading
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, Future
 
 from global_support.database import db_manager, TrainingTask
