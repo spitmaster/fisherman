@@ -161,20 +161,21 @@ class BaseManager(IBaseManager):
                     })
                     return None
     
-    def log_operation(self, operation: str, details: str = "", level: str = "INFO") -> None:
+    def log_operation(self, operation: str, details: str = "", level: str = "INFO", exc_info: bool = False) -> None:
         """记录操作日志
-        
+
         Args:
             operation: 操作名称
             details: 操作详情
             level: 日志级别 (INFO, WARNING, ERROR, DEBUG)
+            exc_info: 是否包含异常堆栈信息
         """
         log_message = f"{operation}"
         if details:
             log_message += f": {details}"
-        
+
         log_method = getattr(self.logger, level.lower(), self.logger.info)
-        log_method(log_message)
+        log_method(log_message, exc_info=exc_info)
     
     def validate_parameters(self, params: Dict[str, Any], required_params: list) -> bool:
         """验证参数是否完整

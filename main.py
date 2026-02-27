@@ -39,20 +39,9 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QCoreApplication, Qt
 from PyQt5.QtGui import QIcon
 
-# 延迟导入主窗口模块
-if pytorch_available:
-    try:
-        from gui.main_window import MainWindow
-        logging.info("成功导入主窗口模块")
-    except Exception as e:
-        logging.error(f"导入主窗口模块失败: {e}")
-        import traceback
-        logging.error(f"错误堆栈: {traceback.format_exc()}")
-        from gui.minimal_window import MinimalWindow
-        MainWindow = MinimalWindow
-else:
-    from gui.minimal_window import MinimalWindow
-    MainWindow = MinimalWindow
+# 导入主窗口模块
+from gui.main_window import MainWindow
+logging.info("成功导入主窗口模块")
 
 # 配置日志系统
 def setup_logging():
@@ -92,31 +81,14 @@ def main():
         # if os.path.exists(icon_path):
         #     app.setWindowIcon(QIcon(icon_path))
         
-        # 检查MainWindow是否成功导入
-        if MainWindow is not None:
-            # 创建并显示主窗口
-            logger.info("Creating main window...")
-            window = MainWindow()
-            window.show()
-            logger.info("Fisherman application started successfully")
-            
-            # 运行应用程序事件循环
-            sys.exit(app.exec_())
-        else:
-            # 如果MainWindow导入失败，显示错误信息
-            from PyQt5.QtWidgets import QMessageBox
-            
-            msg_box = QMessageBox()
-            msg_box.setIcon(QMessageBox.Critical)
-            msg_box.setWindowTitle("应用程序启动失败")
-            msg_box.setText("程序无法正常启动，因为缺少必要的组件。")
-            msg_box.setInformativeText("PyTorch库加载失败，可能是Visual C++ Redistributable未正确安装或PyTorch库文件损坏。\n\n请尝试以下步骤：\n1. 确保已安装Visual C++ Redistributable for Visual Studio 2015-2022\n2. 重新安装PyTorch库\n3. 检查系统是否有病毒或安全软件阻止程序运行")
-            msg_box.setDetailedText("详细错误信息已记录在日志文件中。")
-            msg_box.setStandardButtons(QMessageBox.Ok)
-            msg_box.exec_()
-            
-            logger.error("MainWindow module not available, application cannot start")
-            sys.exit(1)
+        # 创建并显示主窗口
+        logger.info("Creating main window...")
+        window = MainWindow()
+        window.show()
+        logger.info("Fisherman application started successfully")
+
+        # 运行应用程序事件循环
+        sys.exit(app.exec_())
             
     except Exception as e:
         logger.error(f"Error starting application: {str(e)}", exc_info=True)

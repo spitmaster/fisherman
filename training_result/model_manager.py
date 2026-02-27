@@ -41,7 +41,7 @@ class ModelManager:
     def load_models(self):
         """加载所有模型信息"""
         self.models = []
-        
+
         # 从数据库加载模型版本信息
         session = db_manager.get_session()
         try:
@@ -64,13 +64,18 @@ class ModelManager:
                         self.models.append(model_info)
                 else:
                     logger.warning(f"模型文件不存在: {model_path}")
-            
+
             logger.info(f"从数据库加载 {len(model_versions)} 个模型版本")
         except Exception as e:
-            logger.error(f"从数据库加载模型失败: {str(e)}")
+            from sqlalchemy.exc import OperationalError
+            # 如果表不存在，只是跳过加载，不记录为错误
+            if isinstance(e, OperationalError) and "no such table" in str(e):
+                logger.info("数据库表尚未创建，跳过模型加载")
+            else:
+                logger.error(f"从数据库加载模型失败: {str(e)}")
         finally:
             session.close()
-        
+
         # 同时扫描模型目录以包含手动导入的模型（未在数据库中注册的）
         if os.path.exists(self.models_dir):
             for filename in os.listdir(self.models_dir):
@@ -89,7 +94,7 @@ class ModelManager:
                             model_info["task_name"] = "手动导入"
                             model_info["task_description"] = "用户手动导入的模型"
                             self.models.append(model_info)
-        
+
         logger.info(f"成功加载 {len(self.models)} 个模型文件")
         
     def _get_model_info(self, model_path):

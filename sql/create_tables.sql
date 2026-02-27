@@ -1,9 +1,10 @@
 -- Fisherman 视觉自动化程序 - 数据库建表语句
 -- 用于存储训练任务、训练结果、识别任务和日志信息
+-- 所有主键和部分字段使用 UUID 格式
 
 -- 训练任务表
 CREATE TABLE IF NOT EXISTS training_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     task_name TEXT NOT NULL,
     task_description TEXT,
     status TEXT DEFAULT 'pending', -- pending/annotating/training/completed/failed
@@ -19,8 +20,8 @@ CREATE TABLE IF NOT EXISTS training_tasks (
 
 -- 训练日志表
 CREATE TABLE IF NOT EXISTS training_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    training_task_id INTEGER,
+    id TEXT PRIMARY KEY,
+    training_task_id TEXT,
     log_level TEXT DEFAULT 'INFO',
     log_message TEXT,
     log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -29,8 +30,8 @@ CREATE TABLE IF NOT EXISTS training_logs (
 
 -- 识别任务表
 CREATE TABLE IF NOT EXISTS recognition_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    training_task_id INTEGER,
+    id TEXT PRIMARY KEY,
+    training_task_id TEXT,
     status TEXT DEFAULT 'pending', -- pending/running/stopped/completed
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     started_at DATETIME,
@@ -45,8 +46,8 @@ CREATE TABLE IF NOT EXISTS recognition_tasks (
 
 -- 识别日志表
 CREATE TABLE IF NOT EXISTS recognition_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    recognition_task_id INTEGER,
+    id TEXT PRIMARY KEY,
+    recognition_task_id TEXT,
     log_level TEXT DEFAULT 'INFO',
     log_message TEXT,
     log_time DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -55,8 +56,8 @@ CREATE TABLE IF NOT EXISTS recognition_logs (
 
 -- 识别详情表
 CREATE TABLE IF NOT EXISTS recognition_details (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    recognition_task_id INTEGER,
+    id TEXT PRIMARY KEY,
+    recognition_task_id TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     target_x INTEGER,
     target_y INTEGER,
@@ -67,8 +68,8 @@ CREATE TABLE IF NOT EXISTS recognition_details (
 
 -- 模型版本表
 CREATE TABLE IF NOT EXISTS model_versions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    training_task_id INTEGER,
+    id TEXT PRIMARY KEY,
+    training_task_id TEXT,
     model_path TEXT,
     version TEXT,
     is_default BOOLEAN DEFAULT 0,

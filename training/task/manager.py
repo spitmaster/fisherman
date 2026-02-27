@@ -70,22 +70,22 @@ class TrainingTaskManager(ITrainingManager, ICallbackManager, IEventManager, Bas
                 tasks = session.query(TrainingTask).all()
                 for task in tasks:
                     task_info = {
-                        "task_dir": os.path.join("training_data", task.task_name),
+                        "task_dir": f"training_data/{task.id}",
                         "status": task.status,
                         "annotated_images": 0,
                         "total_images": 0
                     }
-                    
+
                     # 获取数据集信息
                     if task.dataset_path and os.path.exists(task.dataset_path):
                         image_dir = os.path.join(os.path.dirname(task.dataset_path), "images", "train")
                         label_dir = os.path.join(os.path.dirname(task.dataset_path), "labels", "train")
-                        
+
                         if os.path.exists(image_dir):
-                            image_files = [f for f in os.listdir(image_dir) 
+                            image_files = [f for f in os.listdir(image_dir)
                                          if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
                             task_info["total_images"] = len(image_files)
-                            
+
                             if os.path.exists(label_dir):
                                 annotated_count = 0
                                 for img_file in image_files:
@@ -93,18 +93,23 @@ class TrainingTaskManager(ITrainingManager, ICallbackManager, IEventManager, Bas
                                     if os.path.exists(os.path.join(label_dir, txt_file)):
                                         annotated_count += 1
                                 task_info["annotated_images"] = annotated_count
-                    
+
                     self.training_tasks[task.id] = task_info
-                    
+
                     # 为每个任务创建锁
                     if task.id not in self.task_locks:
                         self.task_locks[task.id] = threading.Lock()
-                    
+
                 self.log_operation("info", f"加载训练任务成功: 共 {len(tasks)} 个任务")
-                
+
             except Exception as e:
-                self.log_operation("error", f"加载训练任务出错: {str(e)}", exc_info=True)
-                
+                from sqlalchemy.exc import OperationalError
+                # 如果表不存在，只是跳过加载，不记录为错误
+                if isinstance(e, OperationalError) and "no such table" in str(e):
+                    self.log_operation("info", "数据库表尚未创建，跳过训练任务加载")
+                else:
+                    self.log_operation("error", f"加载训练任务出错: {str(e)}", exc_info=True)
+
             finally:
                 session.close()
             

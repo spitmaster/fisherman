@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime, Text, Float
 from sqlalchemy.ext.declarative import declarative_base
@@ -15,8 +16,8 @@ Base = declarative_base()
 
 class TrainingTask(Base):
     __tablename__ = 'training_tasks'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     task_name = Column(String(255), nullable=False)
     task_description = Column(Text)
     status = Column(String(20), default='pending')
@@ -28,27 +29,27 @@ class TrainingTask(Base):
     batch_size = Column(Integer, default=8)
     mAP = Column(Float)
     loss = Column(Float)
-    
+
     # 关系
     training_logs = relationship("TrainingLog", back_populates="training_task")
     recognition_tasks = relationship("RecognitionTask", back_populates="training_task")
 
 class TrainingLog(Base):
     __tablename__ = 'training_logs'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    training_task_id = Column(Integer, ForeignKey('training_tasks.id'))
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    training_task_id = Column(String(36), ForeignKey('training_tasks.id'))
     log_level = Column(String(10), default='INFO')
     log_message = Column(Text)
     log_time = Column(DateTime, default=datetime.now)
-    
+
     training_task = relationship("TrainingTask", back_populates="training_logs")
 
 class RecognitionTask(Base):
     __tablename__ = 'recognition_tasks'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    training_task_id = Column(Integer, ForeignKey('training_tasks.id'))
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    training_task_id = Column(String(36), ForeignKey('training_tasks.id'))
     status = Column(String(20), default='pending')
     created_at = Column(DateTime, default=datetime.now)
     started_at = Column(DateTime)
@@ -58,46 +59,46 @@ class RecognitionTask(Base):
     total_recognitions = Column(Integer, default=0)
     total_clicks = Column(Integer, default=0)
     avg_fps = Column(Integer, default=0)
-    
+
     training_task = relationship("TrainingTask", back_populates="recognition_tasks")
     recognition_logs = relationship("RecognitionLog", back_populates="recognition_task")
     recognition_details = relationship("RecognitionDetail", back_populates="recognition_task")
 
 class RecognitionLog(Base):
     __tablename__ = 'recognition_logs'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    recognition_task_id = Column(Integer, ForeignKey('recognition_tasks.id'))
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    recognition_task_id = Column(String(36), ForeignKey('recognition_tasks.id'))
     log_level = Column(String(10), default='INFO')
     log_message = Column(Text)
     log_time = Column(DateTime, default=datetime.now)
-    
+
     recognition_task = relationship("RecognitionTask", back_populates="recognition_logs")
 
 class RecognitionDetail(Base):
     __tablename__ = 'recognition_details'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    recognition_task_id = Column(Integer, ForeignKey('recognition_tasks.id'))
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    recognition_task_id = Column(String(36), ForeignKey('recognition_tasks.id'))
     timestamp = Column(DateTime, default=datetime.now)
     target_x = Column(Integer)
     target_y = Column(Integer)
     confidence = Column(Integer)
     target_class = Column(String(255))
-    
+
     recognition_task = relationship("RecognitionTask", back_populates="recognition_details")
 
 class ModelVersion(Base):
     __tablename__ = 'model_versions'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    training_task_id = Column(Integer, ForeignKey('training_tasks.id'))
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    training_task_id = Column(String(36), ForeignKey('training_tasks.id'))
     model_path = Column(String(500))
     version = Column(String(50))
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     file_size = Column(Integer, default=0)
-    
+
     training_task = relationship("TrainingTask")
 
 class DatabaseManager:
