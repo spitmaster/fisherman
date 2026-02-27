@@ -48,13 +48,14 @@ class TrainingResultTab(QWidget):
 
         # 模型列表
         self.model_table = QTableWidget()
-        self.model_table.setColumnCount(5)
-        self.model_table.setHorizontalHeaderLabels(["模型文件", "训练集名称", "训练集ID", "创建时间", "大小"])
+        self.model_table.setColumnCount(7)
+        self.model_table.setHorizontalHeaderLabels(["模型文件", "训练集名称", "训练集ID", "创建时间", "大小", "删除", "打开文件夹"])
         self.model_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.model_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.model_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.model_table.cellClicked.connect(self.on_model_selected)
         self.model_table.setAlternatingRowColors(True)
+        self.model_table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # 禁止编辑
         model_layout.addWidget(self.model_table)
 
         # 模型操作按钮
@@ -64,17 +65,10 @@ class TrainingResultTab(QWidget):
         btn_import_model = QPushButton("导入模型")
         btn_import_model.clicked.connect(self.import_model)
 
-        btn_delete_model = QPushButton("删除模型")
-        btn_delete_model.clicked.connect(self.delete_model)
-
-        btn_open_folder = QPushButton("打开模型文件夹")
-        btn_open_folder.clicked.connect(self.open_model_folder)
-
         button_layout = QHBoxLayout()
         button_layout.addWidget(btn_refresh)
         button_layout.addWidget(btn_import_model)
-        button_layout.addWidget(btn_delete_model)
-        button_layout.addWidget(btn_open_folder)
+        button_layout.addStretch()
 
         model_layout.addLayout(button_layout)
         layout.addWidget(model_group)
@@ -116,6 +110,18 @@ class TrainingResultTab(QWidget):
                 size = model.get('size', 0)
                 size_str = self._format_size(size)
                 self.model_table.setItem(i, 4, QTableWidgetItem(size_str))
+
+                # 第6列：删除按钮
+                btn_delete = QPushButton("删除")
+                btn_delete.setStyleSheet("padding: 4px 8px; background-color: #f44336; color: white;")
+                btn_delete.clicked.connect(lambda checked, r=i: self.delete_model_by_row(r))
+                self.model_table.setCellWidget(i, 5, btn_delete)
+
+                # 第7列：打开文件夹按钮
+                btn_open = QPushButton("打开文件夹")
+                btn_open.setStyleSheet("padding: 4px 8px;")
+                btn_open.clicked.connect(lambda checked, r=i: self.open_folder_by_row(r))
+                self.model_table.setCellWidget(i, 6, btn_open)
 
             logger.info(f"刷新模型列表完成,共 {len(model_manager.models)} 个模型")
 
@@ -199,6 +205,63 @@ class TrainingResultTab(QWidget):
                 main_window.statusBar().showMessage(info, 5000)
         except:
             pass
+
+    def delete_model_by_row(self, row: int):
+        """根据行号删除模型"""
+        if row < 0 or row >= len(model_manager.models):
+            return
+
+        model = model_manager.models[row]
+        model_name = model.get('filename', '')
+        model_path = model.get('path', '')
+
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除该模型吗？\n\n模型: {model_name}\n路径: {model_path}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                success = model_manager.delete_model(model_name)
+                if success:
+                    QMessageBox.information(self, "成功", "模型删除成功")
+                    self.refresh_model_list()
+                else:
+                    QMessageBox.warning(self, "警告", "模型删除失败")
+            except Exception as e:
+                logger.error(f"删除模型失败: {str(e)}")
+                QMessageBox.critical(self, "错误", f"删除模型失败: {str(e)}")
+
+    def open_folder_by_row(self, row: int):
+        """根据行号打开模型文件夹"""
+        if row < 0 or row >= len(model_manager.models):
+            return
+
+        model = model_manager.models[row]
+        model_path = model.get('path', '')
+
+        if not model_path:
+            QMessageBox.warning(self, "警告", "无法获取模型路径")
+            return
+
+        try:
+            model_dir = os.path.dirname(model_path)
+
+            if platform.system() == "Windows":
+                subprocess.Popen(f'explorer /select,"{model_path}"')
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", "-R", model_path])
+            else:
+                subprocess.Popen(["xdg-open", model_dir])
+
+            logger.info(f"打开模型文件夹: {model_dir}")
+
+        except Exception as e:
+            logger.error(f"打开模型文件夹失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开模型文件夹失败: {str(e)}")
 
     def import_model(self):
         """导入模型文件"""
