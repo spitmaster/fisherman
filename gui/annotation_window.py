@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QFrame, QSplitter, QMessageBox, QSpinBox, QComboBox,
     QDialog, QDialogButtonBox, QFormLayout, QLineEdit
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, QRect, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
 from training.task.dataset_manager import DatasetManager
@@ -251,6 +251,7 @@ class AnnotationWindow(QMainWindow):
         self.image_files: List[str] = []
         self.class_names = {0: "fish"}  # 默认类别
         self.dataset_manager = DatasetManager()
+        self.toast_label = None  # Toast标签
 
         self.init_ui()
 
@@ -266,6 +267,9 @@ class AnnotationWindow(QMainWindow):
         # 主布局
         main_layout = QHBoxLayout()
         central_widget.setLayout(main_layout)
+
+        # 创建Toast标签(用于显示提示信息)
+        self._create_toast()
 
         # 左侧图片显示区
         left_panel = QWidget()
@@ -334,6 +338,18 @@ class AnnotationWindow(QMainWindow):
         self.class_btn.clicked.connect(self.edit_classes)
         right_layout.addWidget(self.class_btn)
 
+        # 快捷键说明
+        right_layout.addWidget(QLabel("<b>快捷键:</b>"))
+        shortcuts_text = QLabel(
+            "A: 上一张图片\n"
+            "S: 保存标注\n"
+            "D: 下一张图片\n"
+            "Z: 撤销上一个标注\n"
+            "Q/Backspace/Delete: 清除所有标注"
+        )
+        shortcuts_text.setStyleSheet("color: #666; font-size: 11px; padding: 5px;")
+        right_layout.addWidget(shortcuts_text)
+
         right_layout.addStretch()
 
         # 关闭按钮
@@ -343,6 +359,42 @@ class AnnotationWindow(QMainWindow):
 
         main_layout.addWidget(left_panel, stretch=3)
         main_layout.addWidget(right_panel, stretch=1)
+
+        # 设置快捷键
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        """设置快捷键"""
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+
+        # A - 上一张图片
+        self.shortcut_prev = QShortcut(QKeySequence("A"), self)
+        self.shortcut_prev.activated.connect(self.prev_image)
+
+        # D - 下一张图片
+        self.shortcut_next = QShortcut(QKeySequence("D"), self)
+        self.shortcut_next.activated.connect(self.next_image)
+
+        # Z - 撤销上一个标注
+        self.shortcut_undo = QShortcut(QKeySequence("Z"), self)
+        self.shortcut_undo.activated.connect(self.image_label.delete_last_bbox)
+
+        # S - 保存标注
+        self.shortcut_save = QShortcut(QKeySequence("S"), self)
+        self.shortcut_save.activated.connect(self.save_current_annotation)
+
+        # Delete - 清除所有标注
+        self.shortcut_delete = QShortcut(QKeySequence("Delete"), self)
+        self.shortcut_delete.activated.connect(self.image_label.clear_all_bboxes)
+
+        # Backspace - 清除所有标注
+        self.shortcut_backspace = QShortcut(QKeySequence("Backspace"), self)
+        self.shortcut_backspace.activated.connect(self.image_label.clear_all_bboxes)
+
+        # Q - 清除所有标注
+        self.shortcut_q = QShortcut(QKeySequence("Q"), self)
+        self.shortcut_q.activated.connect(self.image_label.clear_all_bboxes)
 
     def load_dataset(self, dataset_name: str):
         """加载训练集"""
@@ -429,7 +481,45 @@ class AnnotationWindow(QMainWindow):
 
         self.image_label.save_annotations(label_file)
         self.annotation_saved.emit(str(label_file))
-        QMessageBox.information(self, "成功", "标注已保存!")
+        self.show_toast("标注已保存!")
+
+    def _create_toast(self):
+        """创建Toast标签"""
+        self.toast_label = QLabel("", self)
+        self.toast_label.setAlignment(Qt.AlignCenter)
+        self.toast_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 200, 83, 230);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        self.toast_label.hide()
+
+    def show_toast(self, message: str):
+        """显示Toast提示"""
+        if not self.toast_label:
+            self._create_toast()
+
+        self.toast_label.setText(message)
+        self.toast_label.adjustSize()
+
+        # 将toast居中显示
+        x = (self.width() - self.toast_label.width()) // 2
+        y = self.height() - 100
+        self.toast_label.move(x, y)
+        self.toast_label.show()
+
+        # 1秒后自动隐藏
+        QTimer.singleShot(1000, self.hide_toast)
+
+    def hide_toast(self):
+        """隐藏Toast提示"""
+        if self.toast_label:
+            self.toast_label.hide()
 
     def edit_classes(self):
         """编辑类别"""

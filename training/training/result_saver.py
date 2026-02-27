@@ -3,283 +3,229 @@
 """
 训练结果保存器
 
-负责训练结果的保存和管理。
+负责保存训练结果、提取指标和管理模型版本。
 """
 
-import os
-import json
 import logging
+import shutil
 from typing import Dict, Any, Optional
-from datetime import datetime
+from pathlib import Path
 
-from global_support.database import db_manager, ModelVersion, TrainingLog
+from global_support.database import db_manager, ModelVersion
+from ..dataset_path_manager import DatasetPathManager
+from .log_manager import TrainingLogManager
 
-from ..core.base_manager import BaseManager
-
-# 日志配置
 logger = logging.getLogger(__name__)
 
 
-class TrainingResultSaver(BaseManager):
+class TrainingResultSaver:
     """训练结果保存器"""
-    
-    def __init__(self):
-        """初始化结果保存器"""
-        super().__init__()
-        
-    def save_training_result(self, task_id: int, result: Dict[str, Any]) -> bool:
+
+    def __init__(self, log_manager: TrainingLogManager):
+        """初始化结果保存器
+
+        Args:
+            log_manager: 日志管理器实例
+        """
+        self.log_manager = log_manager
+
+    def extract_metrics(self, results: Any) -> Dict[str, float]:
+        """提取训练指标
+
+        Args:
+            results: 训练结果对象
+
+        Returns:
+            指标字典
+        """
+        try:
+            # 尝试从results中获取指标
+            if hasattr(results, 'results_dict'):
+                return {
+                    "precision": results.results_dict.get('metrics/precision(B)', 0),
+                    "recall": results.results_dict.get('metrics/recall(B)', 0),
+                    "mAP50": results.results_dict.get('metrics/mAP50(B)', 0),
+                    "mAP50-95": results.results_dict.get('metrics/mAP50-95(B)', 0)
+                }
+            elif hasattr(results, 'metrics'):
+                return results.metrics
+            else:
+                return {"precision": 0, "recall": 0, "mAP50": 0, "mAP50-95": 0}
+        except:
+            return {"precision": 0, "recall": 0, "mAP50": 0, "mAP50-95": 0}
+
+    def get_best_model_path(self, dataset_name: str) -> Optional[Path]:
+        """获取最佳模型路径
+
+        Args:
+            dataset_name: 训练集名称
+
+        Returns:
+            最佳模型路径,不存在则返回None
+        """
+        weights_dir = DatasetPathManager.get_weights_path(dataset_name)
+        best_model_path = weights_dir / "train_run" / "weights" / "best.pt"
+
+        if not best_model_path.exists():
+            self.log_manager.emit_log(f"最佳模型文件不存在: {best_model_path}")
+            return None
+
+        return best_model_path
+
+    def sync_to_result_dir(self, dataset_name: str, model_path: Path) -> Path:
+        """同步模型到结果管理目录
+
+        Args:
+            dataset_name: 训练集名称
+            model_path: 模型文件路径
+
+        Returns:
+            结果目录路径
+        """
+        model_name = f"{dataset_name}_model"
+        result_dir = DatasetPathManager.create_model_result_dir(model_name)
+        shutil.copy2(str(model_path), str(result_dir / "best.pt"))
+        self.log_manager.emit_log(f"模型已同步到结果管理: {result_dir}")
+        return result_dir
+
+    def save_training_result_by_name(
+        self,
+        dataset_name: str,
+        results: Any
+    ) -> Dict[str, Any]:
+        """根据训练集名称保存训练结果
+
+        Args:
+            dataset_name: 训练集名称
+            results: 训练结果对象
+
+        Returns:
+            结果信息字典
+        """
+        try:
+            # 获取最佳模型路径
+            best_model_path = self.get_best_model_path(dataset_name)
+
+            if not best_model_path:
+                return {"model_path": None, "metrics": {}}
+
+            # 同步到训练结果管理目录
+            result_dir = self.sync_to_result_dir(dataset_name, best_model_path)
+
+            metrics = self.extract_metrics(results)
+
+            return {
+                "model_path": str(best_model_path),
+                "model_result_path": str(result_dir / "best.pt"),
+                "model_name": f"{dataset_name}_model",
+                "metrics": metrics
+            }
+
+        except Exception as e:
+            self.log_manager.emit_log(f"保存训练结果失败: {str(e)}")
+            logger.error(f"保存训练结果失败: {str(e)}", exc_info=True)
+            return {"model_path": None, "metrics": {}}
+
+    def save_training_result(
+        self,
+        task_id: int,
+        results: Any,
+        dataset_name: str
+    ) -> Dict[str, Any]:
         """保存训练结果到数据库
-        
+
+        Args:
+            task_id: 任务ID
+            results: 训练结果对象
+            dataset_name: 训练集名称
+
+        Returns:
+            结果信息字典
+        """
+        try:
+            # 获取最佳模型路径
+            best_model_path = self.get_best_model_path(dataset_name)
+
+            if not best_model_path:
+                return {"model_path": None, "metrics": {}}
+
+            # 同步到训练结果管理目录
+            result_dir = self.sync_to_result_dir(dataset_name, best_model_path)
+
+            # 创建模型版本记录
+            session = db_manager.get_session()
+            try:
+                metrics = self.extract_metrics(results)
+
+                model_version = ModelVersion(
+                    task_id=task_id,
+                    model_path=str(best_model_path),
+                    version="1.0",
+                    metrics=metrics
+                )
+
+                session.add(model_version)
+                session.commit()
+
+                result_info = {
+                    "model_path": str(best_model_path),
+                    "model_result_path": str(result_dir / "best.pt"),
+                    "model_version_id": model_version.id,
+                    "metrics": metrics
+                }
+
+                self.log_manager.emit_log(f"训练结果保存成功: 模型版本 {model_version.id}")
+                return result_info
+
+            except Exception as e:
+                self.log_manager.emit_log(f"保存模型版本失败: {str(e)}")
+                logger.error(f"保存模型版本失败: {str(e)}", exc_info=True)
+                session.rollback()
+                return {"model_path": str(best_model_path), "metrics": self.extract_metrics(results)}
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            self.log_manager.emit_log(f"保存训练结果失败: {str(e)}")
+            logger.error(f"保存训练结果失败: {str(e)}", exc_info=True)
+            return {"model_path": None, "metrics": {}}
+
+    def save_training_result_direct(
+        self,
+        task_id: int,
+        result: Dict[str, Any]
+    ) -> bool:
+        """直接保存训练结果
+
         Args:
             task_id: 任务ID
             result: 训练结果字典
-            
+
         Returns:
             保存是否成功
         """
         session = db_manager.get_session()
         try:
-            # 创建模型版本记录
+            # 保存结果到数据库
             model_version = ModelVersion(
                 task_id=task_id,
                 model_path=result.get("model_path"),
-                version=result.get("version", "1.0"),
-                metrics=result.get("metrics", {}),
-                created_at=datetime.now()
+                version="1.0",
+                metrics=result.get("metrics", {})
             )
-            
+
             session.add(model_version)
             session.commit()
-            
-            # 记录训练完成日志
-            training_log = TrainingLog(
-                task_id=task_id,
-                log_type="training_result_saved",
-                message=f"训练结果保存成功，模型版本: {model_version.id}",
-                created_at=datetime.now()
-            )
-            
-            session.add(training_log)
-            session.commit()
-            
-            self.log_operation("info", f"训练结果保存成功: 任务 {task_id}, 模型版本 {model_version.id}")
+
+            self.log_manager.emit_log(f"训练结果保存成功: 任务 {task_id}, 模型版本 {model_version.id}")
             return True
-            
+
         except Exception as e:
-            self.log_operation("error", f"保存训练结果失败: {str(e)}", exc_info=True)
+            self.log_manager.emit_log(f"保存训练结果失败: {str(e)}")
+            logger.error(f"保存训练结果失败: {str(e)}", exc_info=True)
             session.rollback()
             return False
-            
+
         finally:
             session.close()
-            
-    def save_result_to_file(self, task_id: int, result: Dict[str, Any], output_dir: str) -> str:
-        """保存训练结果到文件
-        
-        Args:
-            task_id: 任务ID
-            result: 训练结果字典
-            output_dir: 输出目录
-            
-        Returns:
-            保存的文件路径
-        """
-        try:
-            # 确保输出目录存在
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # 生成文件名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"training_result_{task_id}_{timestamp}.json"
-            file_path = os.path.join(output_dir, filename)
-            
-            # 准备保存的数据
-            result_data = {
-                "task_id": task_id,
-                "timestamp": timestamp,
-                "created_at": datetime.now().isoformat(),
-                "result": result
-            }
-            
-            # 保存到JSON文件
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(result_data, f, ensure_ascii=False, indent=2)
-            
-            self.log_operation("info", f"训练结果保存到文件: {file_path}")
-            return file_path
-            
-        except Exception as e:
-            self.log_operation("error", f"保存训练结果到文件失败: {str(e)}", exc_info=True)
-            return None
-            
-    def get_training_results(self, task_id: int) -> list:
-        """获取任务的所有训练结果
-        
-        Args:
-            task_id: 任务ID
-            
-        Returns:
-            训练结果列表
-        """
-        session = db_manager.get_session()
-        try:
-            results = session.query(ModelVersion).filter_by(task_id=task_id).all()
-            
-            result_list = []
-            for result in results:
-                result_list.append({
-                    "id": result.id,
-                    "task_id": result.task_id,
-                    "model_path": result.model_path,
-                    "version": result.version,
-                    "metrics": result.metrics,
-                    "created_at": result.created_at
-                })
-            
-            return result_list
-            
-        except Exception as e:
-            self.log_operation("error", f"获取训练结果失败: {str(e)}", exc_info=True)
-            return []
-            
-        finally:
-            session.close()
-            
-    def get_latest_training_result(self, task_id: int) -> Optional[Dict[str, Any]]:
-        """获取任务的最新训练结果
-        
-        Args:
-            task_id: 任务ID
-            
-        Returns:
-            最新的训练结果字典
-        """
-        session = db_manager.get_session()
-        try:
-            result = session.query(ModelVersion).filter_by(task_id=task_id).order_by(ModelVersion.created_at.desc()).first()
-            
-            if result:
-                return {
-                    "id": result.id,
-                    "task_id": result.task_id,
-                    "model_path": result.model_path,
-                    "version": result.version,
-                    "metrics": result.metrics,
-                    "created_at": result.created_at
-                }
-            else:
-                return None
-                
-        except Exception as e:
-            self.log_operation("error", f"获取最新训练结果失败: {str(e)}", exc_info=True)
-            return None
-            
-        finally:
-            session.close()
-            
-    def delete_training_result(self, result_id: int) -> bool:
-        """删除训练结果
-        
-        Args:
-            result_id: 结果ID
-            
-        Returns:
-            删除是否成功
-        """
-        session = db_manager.get_session()
-        try:
-            result = session.query(ModelVersion).filter_by(id=result_id).first()
-            if not result:
-                self.log_operation("error", f"训练结果不存在: {result_id}")
-                return False
-                
-            # 如果模型文件存在，尝试删除
-            if result.model_path and os.path.exists(result.model_path):
-                try:
-                    os.remove(result.model_path)
-                    self.log_operation("info", f"删除模型文件: {result.model_path}")
-                except Exception as e:
-                    self.log_operation("warning", f"删除模型文件失败: {result.model_path} - {str(e)}")
-            
-            # 从数据库中删除记录
-            session.delete(result)
-            session.commit()
-            
-            self.log_operation("info", f"训练结果删除成功: {result_id}")
-            return True
-            
-        except Exception as e:
-            self.log_operation("error", f"删除训练结果失败: {str(e)}", exc_info=True)
-            session.rollback()
-            return False
-            
-        finally:
-            session.close()
-            
-    def export_results(self, task_id: int, export_format: str = "json") -> Optional[str]:
-        """导出训练结果
-        
-        Args:
-            task_id: 任务ID
-            export_format: 导出格式，支持 "json" 或 "csv"
-            
-        Returns:
-            导出的文件路径
-        """
-        try:
-            # 获取所有训练结果
-            results = self.get_training_results(task_id)
-            if not results:
-                self.log_operation("warning", f"没有找到训练结果: 任务 {task_id}")
-                return None
-                
-            # 创建导出目录
-            export_dir = os.path.join("training_data", f"task_{task_id}", "exports")
-            os.makedirs(export_dir, exist_ok=True)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            if export_format.lower() == "json":
-                filename = f"training_results_{task_id}_{timestamp}.json"
-                file_path = os.path.join(export_dir, filename)
-                
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump({
-                        "task_id": task_id,
-                        "export_time": timestamp,
-                        "results": results
-                    }, f, ensure_ascii=False, indent=2)
-                    
-                self.log_operation("info", f"训练结果导出为JSON: {file_path}")
-                return file_path
-                
-            elif export_format.lower() == "csv":
-                filename = f"training_results_{task_id}_{timestamp}.csv"
-                file_path = os.path.join(export_dir, filename)
-                
-                # 简单CSV导出
-                import csv
-                with open(file_path, "w", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    # 写入标题行
-                    writer.writerow(["ID", "Task ID", "Model Path", "Version", "Created At"])
-                    # 写入数据行
-                    for result in results:
-                        writer.writerow([
-                            result["id"],
-                            result["task_id"],
-                            result["model_path"],
-                            result["version"],
-                            result["created_at"]
-                        ])
-                
-                self.log_operation("info", f"训练结果导出为CSV: {file_path}")
-                return file_path
-                
-            else:
-                self.log_operation("error", f"不支持的导出格式: {export_format}")
-                return None
-                
-        except Exception as e:
-            self.log_operation("error", f"导出训练结果失败: {str(e)}", exc_info=True)
-            return None

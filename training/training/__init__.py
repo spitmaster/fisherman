@@ -5,23 +5,21 @@
 """
 
 from .executor import TrainingExecutor
-from .yolo_trainer import YOLOTrainer
-from .callback_handler import TrainingCallbackHandler
+from .config_builder import TrainingConfigBuilder
+from .log_manager import TrainingLogManager
 from .result_saver import TrainingResultSaver
+from .training_callbacks import TrainingCallbacks
 
 # 创建全局实例
 training_executor = TrainingExecutor()
-yolo_trainer = YOLOTrainer()
-callback_handler = TrainingCallbackHandler()
-result_saver = TrainingResultSaver()
+config_builder = TrainingConfigBuilder()
 
 __all__ = [
     'TrainingExecutor',
-    'YOLOTrainer',
-    'TrainingCallbackHandler',
+    'TrainingConfigBuilder',
+    'TrainingLogManager',
     'TrainingResultSaver',
+    'TrainingCallbacks',
     'training_executor',
-    'yolo_trainer',
-    'callback_handler',
-    'result_saver'
+    'config_builder'
 ]
