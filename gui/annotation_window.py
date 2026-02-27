@@ -338,6 +338,13 @@ class AnnotationWindow(QMainWindow):
         self.class_btn.clicked.connect(self.edit_classes)
         right_layout.addWidget(self.class_btn)
 
+        # 删除图片
+        right_layout.addWidget(QLabel("<b>图片操作:</b>"))
+        self.delete_image_btn = QPushButton("删除当前图片")
+        self.delete_image_btn.setStyleSheet("background-color: #f44336; color: white;")
+        self.delete_image_btn.clicked.connect(self.delete_current_image)
+        right_layout.addWidget(self.delete_image_btn)
+
         # 快捷键说明
         right_layout.addWidget(QLabel("<b>快捷键:</b>"))
         shortcuts_text = QLabel(
@@ -528,6 +535,64 @@ class AnnotationWindow(QMainWindow):
             self.class_names = dialog.get_class_names()
             self.image_label.set_class_names(self.class_names)
             self.image_label.update()
+
+    def delete_current_image(self):
+        """删除当前图片（含二次确认）"""
+        if not self.image_files:
+            QMessageBox.warning(self, "警告", "没有可删除的图片!")
+            return
+
+        current_img_file = self.image_files[self.current_image_index]
+
+        # 二次确认
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除当前图片吗？\n\n图片名称: {current_img_file}\n\n此操作将同时删除图片和对应的标注文件，且无法恢复！",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        try:
+            # 获取图片和标注文件路径
+            images_dir = DatasetPathManager.get_images_path(self.dataset_name)
+            labels_dir = DatasetPathManager.get_labels_path(self.dataset_name)
+
+            img_path = images_dir / current_img_file
+            label_path = labels_dir / (Path(current_img_file).stem + ".txt")
+
+            # 删除图片
+            if img_path.exists():
+                img_path.unlink()
+                self.show_toast(f"图片已删除: {current_img_file}")
+
+            # 删除标注文件
+            if label_path.exists():
+                label_path.unlink()
+
+            # 从列表中移除
+            self.image_files.pop(self.current_image_index)
+            self.image_list.takeItem(self.current_image_index)
+
+            # 如果列表不为空，加载下一张图片
+            if self.image_files:
+                if self.current_image_index >= len(self.image_files):
+                    self.current_image_index = len(self.image_files) - 1
+                self.load_current_image()
+                self.show_toast(f"已加载下一张图片")
+            else:
+                # 如果没有图片了，清空显示
+                self.current_image_label.setText("-")
+                self.image_label.clear()
+                self.image_label.bounding_boxes = []
+                self.bbox_count_label.setText("标注数量: 0")
+                self.show_toast("训练集中已无图片")
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"删除图片失败: {str(e)}")
 
 
 def open_annotation_window(dataset_name: str, parent=None) -> Optional[AnnotationWindow]:

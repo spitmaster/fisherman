@@ -55,7 +55,7 @@ class TrainingResultSaver:
             return {"precision": 0, "recall": 0, "mAP50": 0, "mAP50-95": 0}
 
     def get_best_model_path(self, dataset_name: str) -> Optional[Path]:
-        """获取最佳模型路径
+        """获取最佳模型路径（查找最新的训练结果）
 
         Args:
             dataset_name: 训练集名称
@@ -64,7 +64,21 @@ class TrainingResultSaver:
             最佳模型路径,不存在则返回None
         """
         weights_dir = DatasetPathManager.get_weights_path(dataset_name)
-        best_model_path = weights_dir / "train_run" / "weights" / "best.pt"
+
+        # 查找所有训练目录，格式为 train_YYYYMMDD_HHMMSS
+        train_dirs = sorted(
+            [d for d in weights_dir.iterdir() if d.is_dir() and d.name.startswith("train_")],
+            key=lambda x: x.stat().st_mtime,  # 按修改时间排序
+            reverse=True
+        )
+
+        if not train_dirs:
+            self.log_manager.emit_log(f"未找到训练目录: {weights_dir}")
+            return None
+
+        # 使用最新的训练目录
+        latest_train_dir = train_dirs[0]
+        best_model_path = latest_train_dir / "weights" / "best.pt"
 
         if not best_model_path.exists():
             self.log_manager.emit_log(f"最佳模型文件不存在: {best_model_path}")
@@ -82,7 +96,11 @@ class TrainingResultSaver:
         Returns:
             结果目录路径
         """
-        model_name = f"{dataset_name}_model"
+        # 从模型路径中提取训练时间戳，生成唯一的模型名称
+        # 模型路径格式: training_data/{dataset_name}/models/train_YYYYMMDD_HHMMSS/weights/best.pt
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = f"{dataset_name}_{timestamp}"
         result_dir = DatasetPathManager.create_model_result_dir(model_name)
         shutil.copy2(str(model_path), str(result_dir / "best.pt"))
         self.log_manager.emit_log(f"模型已同步到结果管理: {result_dir}")
@@ -96,7 +114,7 @@ class TrainingResultSaver:
         """根据训练集名称保存训练结果
 
         Args:
-            dataset_name: 训练集名称
+            dataset_name: 训练集名称（实际上是UUID，即TrainingTask的id）
             results: 训练结果对象
 
         Returns:
@@ -120,10 +138,15 @@ class TrainingResultSaver:
             metrics = self.extract_metrics(results)
 
             # 注册到数据库的模型版本表
+            # dataset_name 实际上是 TrainingTask 的 id (UUID)
             session = db_manager.get_session()
             try:
+                # 查找对应的 TrainingTask
+                from global_support.database import TrainingTask
+                training_task = session.query(TrainingTask).filter_by(id=dataset_name).first()
+
                 model_version = ModelVersion(
-                    training_task_id=None,  # 没有任务ID的训练
+                    training_task_id=dataset_name if training_task else None,  # 关联到训练任务
                     model_path=str(best_model_path),
                     version="1.0",
                     is_default=False,

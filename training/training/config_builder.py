@@ -8,6 +8,7 @@
 
 from typing import Dict, Any
 from pathlib import Path
+from datetime import datetime
 
 from ..dataset_path_manager import DatasetPathManager
 
@@ -59,13 +60,17 @@ names:
         Returns:
             YOLO训练参数字典
         """
+        # 生成唯一的训练名称，使用时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        train_name = f"train_{timestamp}"
+
         return {
             "data": str(data_yaml_path),
             "epochs": training_params.get("epochs", 100),
             "batch": training_params.get("batch_size", 16),
             "imgsz": training_params.get("image_size", 640),
             "project": str(weights_dir),
-            "name": "train_run",
+            "name": train_name,
             "exist_ok": True,
             "verbose": verbose
         }

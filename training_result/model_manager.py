@@ -63,16 +63,17 @@ class ModelManager:
                             if training_task:
                                 model_info["task_name"] = training_task.task_name
                                 model_info["task_description"] = training_task.task_description
-                                # 从dataset_path中提取训练集名称
-                                if training_task.dataset_path:
-                                    dataset_name = self._extract_dataset_name_from_path(training_task.dataset_path)
-                                    model_info["dataset_name"] = dataset_name
+                                model_info["dataset_id"] = version.training_task_id  # 训练集ID (TrainingTask的ID)
+                                model_info["dataset_name"] = training_task.task_name  # 训练集名称 (TrainingTask的task_name)
                             else:
                                 model_info["task_name"] = "未知任务"
-                                model_info["dataset_name"] = "未知"
+                                model_info["dataset_id"] = version.training_task_id  # 仍然保留ID
+                                model_info["dataset_name"] = self._extract_dataset_name_from_path(model_path)
                         else:
                             model_info["task_name"] = "直接训练"
-                            model_info["dataset_name"] = "未知"
+                            model_info["dataset_id"] = ""  # 没有关联任务,没有ID
+                            # 从模型路径提取训练集名称
+                            model_info["dataset_name"] = self._extract_dataset_name_from_path(model_path)
 
                         self.models.append(model_info)
                 else:

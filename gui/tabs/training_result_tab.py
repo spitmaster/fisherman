@@ -7,12 +7,15 @@
 """
 
 import logging
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QPushButton, QFileDialog, QMessageBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView
 )
-from PyQt5.QtCore import Qt
+import os
+import subprocess
+import platform
 
 from training_result.model_manager import model_manager
 
@@ -30,6 +33,11 @@ class TrainingResultTab(QWidget):
         self._init_ui()
         self.refresh_model_list()
 
+    def showEvent(self, event):
+        """页面显示时自动刷新"""
+        super().showEvent(event)
+        self.refresh_model_list()
+
     def _init_ui(self):
         """初始化界面"""
         layout = QVBoxLayout(self)
@@ -40,8 +48,8 @@ class TrainingResultTab(QWidget):
 
         # 模型列表
         self.model_table = QTableWidget()
-        self.model_table.setColumnCount(7)
-        self.model_table.setHorizontalHeaderLabels(["模型文件", "训练集名称", "任务名称", "创建时间", "版本", "默认", "大小"])
+        self.model_table.setColumnCount(5)
+        self.model_table.setHorizontalHeaderLabels(["模型文件", "训练集名称", "训练集ID", "创建时间", "大小"])
         self.model_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.model_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.model_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -59,14 +67,14 @@ class TrainingResultTab(QWidget):
         btn_delete_model = QPushButton("删除模型")
         btn_delete_model.clicked.connect(self.delete_model)
 
-        btn_set_default = QPushButton("设为默认")
-        btn_set_default.clicked.connect(self.set_default_model)
+        btn_open_folder = QPushButton("打开模型文件夹")
+        btn_open_folder.clicked.connect(self.open_model_folder)
 
         button_layout = QHBoxLayout()
         button_layout.addWidget(btn_refresh)
         button_layout.addWidget(btn_import_model)
         button_layout.addWidget(btn_delete_model)
-        button_layout.addWidget(btn_set_default)
+        button_layout.addWidget(btn_open_folder)
 
         model_layout.addLayout(button_layout)
         layout.addWidget(model_group)
@@ -92,9 +100,9 @@ class TrainingResultTab(QWidget):
                 dataset_name = model.get('dataset_name', self._extract_dataset_name(model.get('path', '')))
                 self.model_table.setItem(i, 1, QTableWidgetItem(dataset_name))
 
-                # 任务名称
-                task_name = model.get('task_name', '手动导入')
-                self.model_table.setItem(i, 2, QTableWidgetItem(task_name))
+                # 训练集ID
+                dataset_id = model.get('dataset_id', '')
+                self.model_table.setItem(i, 2, QTableWidgetItem(dataset_id))
 
                 # 创建时间
                 created_time = model.get('created_time', '')
@@ -104,21 +112,10 @@ class TrainingResultTab(QWidget):
                     created_str = ''
                 self.model_table.setItem(i, 3, QTableWidgetItem(created_str))
 
-                # 版本
-                version = model.get('version', '')
-                self.model_table.setItem(i, 4, QTableWidgetItem(str(version)))
-
-                # 是否默认
-                is_default = model.get('is_default', False)
-                default_item = QTableWidgetItem('是' if is_default else '否')
-                if is_default:
-                    default_item.setForeground(Qt.green)
-                self.model_table.setItem(i, 5, default_item)
-
                 # 文件大小
                 size = model.get('size', 0)
                 size_str = self._format_size(size)
-                self.model_table.setItem(i, 6, QTableWidgetItem(size_str))
+                self.model_table.setItem(i, 4, QTableWidgetItem(size_str))
 
             logger.info(f"刷新模型列表完成,共 {len(model_manager.models)} 个模型")
 
@@ -177,6 +174,7 @@ class TrainingResultTab(QWidget):
             f"模型文件: {model_info.get('filename', '')}",
             f"模型路径: {model_info.get('path', '')}",
             f"训练集名称: {model_info.get('dataset_name', '未知')}",
+            f"训练集ID: {model_info.get('dataset_id', '')}",
             f"任务名称: {model_info.get('task_name', '未知')}",
             f"任务描述: {model_info.get('task_description', '')}",
             f"创建时间: {model_info.get('created_time', '')}",
@@ -282,4 +280,28 @@ class TrainingResultTab(QWidget):
         except Exception as e:
             logger.error(f"设置默认模型出错: {str(e)}")
             QMessageBox.critical(self, "错误", f"设置默认模型出错: {str(e)}")
+
+    def open_model_folder(self):
+        """打开模型文件所在的文件夹"""
+        if not self.current_model_path:
+            QMessageBox.warning(self, "警告", "请先选择一个模型")
+            return
+
+        try:
+            # 获取模型文件的目录
+            model_dir = os.path.dirname(self.current_model_path)
+
+            # 根据操作系统打开文件夹
+            if platform.system() == "Windows":
+                subprocess.Popen(f'explorer /select,"{self.current_model_path}"')
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.Popen(["open", "-R", self.current_model_path])
+            else:  # Linux
+                subprocess.Popen(["xdg-open", model_dir])
+
+            logger.info(f"打开模型文件夹: {model_dir}")
+
+        except Exception as e:
+            logger.error(f"打开模型文件夹失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开模型文件夹失败: {str(e)}")
 
