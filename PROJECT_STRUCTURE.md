@@ -41,10 +41,17 @@ d:\workspace\wow\fisherman\
 
 ### 2. gui/ - 图形界面模块
 
-| 文件 | 功能描述 |
-|------|----------|
-| **main_window.py** | 主窗口组件，使用PyQt5实现，包含训练、训练结果、识别和设置四个标签页 |
-| **minimal_window.py** | 极简窗口组件，提供基本的功能展示 |
+| 目录/文件 | 功能描述 |
+|-----------|----------|
+| **main_window.py** | 主窗口组件(已重构,160行),负责窗口框架和标签页集成 |
+| **tabs/** | 标签页模块目录,高内聚低耦合的标签页实现 |
+| tabs/**training_tab.py** | 训练标签页,提供训练集创建、查看、删除功能 |
+| tabs/**training_result_tab.py** | 训练结果标签页,提供模型管理功能 |
+| tabs/**recognition_tab.py** | 识别标签页,提供识别任务管理功能 |
+| tabs/**settings_tab.py** | 设置标签页,显示系统信息 |
+| **annotation_window.py** | 标注对话框,Qt图形化标注工具 |
+| **dataset_detail_dialog.py** | 训练集详情对话框,提供图片导入、标注、训练功能 |
+| **log_viewer_dialog.py** | 日志查看对话框 |
 
 ### 3. recognition/ - 识别模块
 
@@ -101,6 +108,7 @@ d:\workspace\wow\fisherman\
 
 | 文件 | 功能描述 |
 |------|----------|
+| **dataset_path_manager.py** | 训练集路径管理器,统一管理训练集和训练结果的目录路径及创建 |
 | **annotation_tool.py** | 标注工具主入口，提供用户与标注功能的交互接口 |
 | **training_manager.py** | 训练管理器主入口，整合所有训练功能并提供统一接口 |
 
@@ -127,7 +135,7 @@ d:\workspace\wow\fisherman\
 
 | 目录 | 功能描述 |
 |------|----------|
-| **training_data/** | 训练数据存储目录，包含各任务的训练图像和标注数据 |
+| **training_data/** | 训练数据存储目录,使用UUID作为目录名: `training_data/{UUID}/dataset/images/`, `training_data/{UUID}/dataset/labels/` |
 | **models/** | 训练好的模型存储目录 |
 | **logs/** | 程序运行日志存储目录 |
 
@@ -135,13 +143,13 @@ d:\workspace\wow\fisherman\
 
 ### 1. 训练流程
 
-1. 创建训练任务
-2. 导入训练图像
-3. 标注图像数据
+1. 创建训练集(自动生成UUID)
+2. 导入训练图像(复制方式,非移动)
+3. 打开训练集详情进行图像标注
 4. 配置训练参数
 5. 开始训练
 6. 监控训练过程
-7. 保存训练结果
+7. 训练结果自动同步到 `training_result/` 目录
 
 ### 2. 识别流程
 
@@ -170,11 +178,11 @@ python main.py
 
 ### 创建训练任务
 
-1. 在训练标签页点击"创建任务"按钮
-2. 填写任务名称和描述
-3. 点击"导入图片"按钮导入训练图像
-4. 点击"开始标注"按钮进行图像标注
-5. 配置训练参数（训练轮数和批次大小）
+1. 在训练标签页点击"新建训练集"按钮
+2. 填写训练集名称和备注
+3. 点击"打开详情"按钮导入训练图像
+4. 使用图形化标注工具进行图像标注
+5. 配置训练参数(训练轮数、批次大小、图片尺寸、模型类型)
 6. 点击"开始训练"按钮启动训练
 
 ### 执行识别任务
@@ -242,9 +250,14 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 
 | 文件 | 功能 | 完成度 | 状态 | 待办事项 |
 |------|------|--------|------|----------|
-| main_window.py | 主窗口 | 🟢 90% | ✅ 已完成 | - 完善识别结果展示<br>- 添加设置页功能<br>- 完善训练结果管理界面 |
+| main_window.py | 主窗口(已重构为160行) | 🟢 95% | ✅ 已完成 | - 完善识别结果展示<br>- 完善训练结果管理界面 |
+| tabs/training_tab.py | 训练标签页 | 🟢 100% | ✅ 已完成 | - |
+| tabs/training_result_tab.py | 训练结果标签页 | 🟢 80% | 🔄 进行中 | - 完善模型列表展示<br>- 实现模型对比功能 |
+| tabs/recognition_tab.py | 识别标签页 | 🟢 90% | ✅ 已完成 | - 完善识别参数配置 |
+| tabs/settings_tab.py | 设置标签页 | 🟢 100% | ✅ 已完成 | - |
+| dataset_detail_dialog.py | 训练集详情对话框 | 🟢 95% | ✅ 已完成 | - |
 | annotation_window.py | 标注窗口 | 🟢 100% | ✅ 已完成 | - |
-| minimal_window.py | 极简窗口 | 🟢 100% | ✅ 已完成 | - |
+| log_viewer_dialog.py | 日志查看对话框 | 🟢 100% | ✅ 已完成 | - |
 
 ### 3. recognition - 识别模块
 
@@ -293,7 +306,7 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 
 | 文件 | 功能 | 完成度 | 状态 | 待办事项 |
 |------|------|--------|------|----------|
-| main.py | 程序入口 | 🟢 80% | 🔄 进行中 | - 完善PyTorch兼容性处理<br>- 添加更多启动选项 |
+| main.py | 程序入口(已简化,删除minimal_window回退逻辑) | 🟢 95% | ✅ 已完成 | - |
 
 ---
 
@@ -321,36 +334,42 @@ Fisherman项目是一个功能完善、架构清晰的计算机视觉自动化�
 
 ---
 
-## 最近更新 (2026-02-25)
+## 最近更新 (2026-02-27)
 
-### 新增功能
-1. ✅ 创建 `training/dataset_path_manager.py` - 统一管理训练集路径
-2. ✅ 改造 `training/task/dataset_manager.py` - 支持复制方式导入图片
-3. ✅ 创建 `gui/annotation_window.py` - Qt图形化标注工具
-4. ✅ 改造 `training/training/executor.py` - 训练结果自动同步
-5. ✅ 完善 `gui/main_window.py` - 训练标签页集成完整流程
+### 重构优化
+1. ✅ **重构 `gui/main_window.py`** - 从968行重构为160行,实现高内聚低耦合
+2. ✅ **创建 `gui/tabs/` 模块** - 将标签页拆分为独立文件:
+   - `training_tab.py` - 训练集管理
+   - `training_result_tab.py` - 模型管理
+   - `recognition_tab.py` - 识别任务管理
+   - `settings_tab.py` - 系统信息
+3. ✅ **删除 `gui/minimal_window.py`** - 移除不必要的最小化窗口回退机制
+4. ✅ **简化 `main.py`** - 删除minimal_window相关逻辑,直接导入主窗口
+5. ✅ **修复路径问题** - 修正 `dataset_path_manager.py` 的 `BASE_DIR` 计算错误
+
+### 功能改进
+- 训练集创建对话框简化,移除重复的"描述"字段,只保留"备注"
+- 训练集目录使用UUID命名: `training_data/{UUID}/dataset/images/`
+- 图片导入使用复制方式,不移动原文件
+- 数据库表ID改为UUID格式
+
+### 架构优势
+- **高内聚低耦合**: 每个标签页独立管理自己的UI和逻辑
+- **职责清晰**: 各模块功能明确,互不干扰
+- **易于维护**: 修改一个功能不影响其他模块
+- **代码复用**: 标签页可在其他地方复用
 
 ### 目录结构
 ```
-running/
-├── training/              # 训练集目录
-│   └── {训练集名称}/
-│       ├── images/       # 训练图片
-│       ├── labels/       # 标注数据(YOLO格式)
-│       ├── weights/      # 训练好的模型
-│       └── data.yaml     # 数据配置
-└── training_result/      # 训练结果管理
-    └── {模型名称}/       # 每个训练结果
-        └── best.pt       # 模型文件
+training_data/
+└── {UUID}/                    # 使用UUID作为训练集ID
+    ├── dataset/
+    │   ├── images/           # 训练图片(复制方式)
+    │   ├── labels/           # YOLO格式标注
+    │   └── remark.txt        # 备注信息
+    ├── models/               # 训练好的模型
+    └── annotations/          # 标注数据
 ```
-
-### 使用流程
-1. 创建训练集 → 2. 导入图片 → 3. 图形化标注 → 4. 开始训练 → 5. 结果自动同步
-1. ✅ global_support/database.py - 已完成
-2. ✅ global_support/task_scheduler.py - 已完成
-3. 🔄 gui/main_window.py - 完善界面集成
-4. 🔄 training/training_manager.py - 完善训练流程
-5. 🔄 recognition/screen_recognition.py - 完善识别功能
 
 ### 第二优先级（体验优化）
 1. training/annotation/tool.py - 标注工具优化
