@@ -9,7 +9,7 @@
 import logging
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
-    QLabel, QGroupBox, QTabWidget, QMessageBox, QTextEdit
+    QLabel, QGroupBox, QTabWidget, QMessageBox, QTextEdit, QLineEdit
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -18,6 +18,7 @@ from training.task.dataset_manager import DatasetManager
 from training.dataset_path_manager import DatasetPathManager
 from gui.detail_tabs.images_tab import ImagesTab
 from gui.detail_tabs.training_tab import TrainingTab
+from global_support.database import db_manager, TrainingTask
 
 logger = logging.getLogger(__name__)
 
@@ -27,25 +28,36 @@ class DatasetDetailDialog(QDialog):
 
     annotation_completed = pyqtSignal()  # 标注完成信号
 
-    def __init__(self, dataset_name: str, dataset_remark: str = "", parent=None):
+    def __init__(self, dataset_id: str, dataset_remark: str = "", parent=None):
         super().__init__(parent)
         # 移除问号帮助按钮
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        self.dataset_name = dataset_name
+        self.dataset_id = dataset_id  # UUID
+        self.dataset_name = ""  # 从数据库加载的名称
         self.dataset_remark = dataset_remark
         self.dataset_manager = DatasetManager()
 
         # 保存状态
         self._last_saved_remark = dataset_remark
+        self._last_saved_name = ""
 
         self.init_ui()
         self.load_dataset_info()
 
         # 安装事件过滤器来监听焦点事件
         self.edit_remark.installEventFilter(self)
+        self.edit_name.installEventFilter(self)
 
     def accept(self):
-        """关闭对话框前立即保存备注"""
+        """关闭对话框前立即保存名称和备注"""
+        # 保存当前名称
+        current_name = self.edit_name.text().strip()
+        if current_name and current_name != self._last_saved_name:
+            self._save_dataset_name_to_db(current_name)
+            self._last_saved_name = current_name
+            self.dataset_name = current_name
+            logger.info(f"训练集名称已保存: {current_name}")
+
         # 保存当前备注
         current_remark = self.edit_remark.toPlainText().strip()
         if current_remark != self._last_saved_remark:
@@ -59,7 +71,7 @@ class DatasetDetailDialog(QDialog):
 
     def init_ui(self):
         """初始化界面"""
-        self.setWindowTitle(f"训练集详情 - {self.dataset_name}")
+        self.setWindowTitle(f"训练集详情 - {self.dataset_id}")
         self.setMinimumSize(900, 700)
         self.resize(900, 700)
 
@@ -70,8 +82,17 @@ class DatasetDetailDialog(QDialog):
         info_group.setFixedHeight(180)  # 固定训练集信息区域高度
         info_layout = QFormLayout()
 
-        self.label_name = QLabel(self.dataset_name)
-        self.label_name.setFont(QFont("Arial", 12, QFont.Bold))
+        # 训练集ID (只读)
+        self.edit_id = QLineEdit(self.dataset_id)
+        self.edit_id.setReadOnly(True)
+        self.edit_id.setStyleSheet("QLineEdit { background-color: #f0f0f0; }")
+
+        # 训练集名称 (可编辑)
+        self.edit_name = QLineEdit()
+        self.edit_name.setPlaceholderText("输入训练集名称...")
+        self.edit_name.setText(self.dataset_name)
+        # 添加提示文本，说明会自动保存
+        self.edit_name.setToolTip("修改后失去焦点或关闭对话框时自动保存")
 
         self.edit_remark = QTextEdit()
         self.edit_remark.setPlaceholderText("输入备注信息...")
@@ -79,7 +100,8 @@ class DatasetDetailDialog(QDialog):
         # 添加提示文本，说明会自动保存
         self.edit_remark.setToolTip("修改后失去焦点或关闭对话框时自动保存")
 
-        info_layout.addRow("训练集名称:", self.label_name)
+        info_layout.addRow("训练集ID:", self.edit_id)
+        info_layout.addRow("训练集名称:", self.edit_name)
         info_layout.addRow("备注:", self.edit_remark)
 
         info_group.setLayout(info_layout)
@@ -111,16 +133,16 @@ class DatasetDetailDialog(QDialog):
         # 功能标签页
         tabs = QTabWidget()
 
-        # 图片管理标签页
-        self.images_tab = ImagesTab(self.dataset_name, self)
+        # 图片管理标签页 (使用 dataset_id 而不是 dataset_name)
+        self.images_tab = ImagesTab(self.dataset_id, self)
         self.images_tab.images_imported.connect(self.on_images_imported)
         self.images_tab.images_deleted.connect(self.on_images_deleted)
         self.images_tab.annotation_completed.connect(self.on_annotation_completed)
         self.images_tab.set_parent_dialog(self)  # 设置父对话框,用于启动标注工具
         tabs.addTab(self.images_tab, "图片管理")
 
-        # 训练设置标签页
-        self.training_tab = TrainingTab(self.dataset_name, 0, self)
+        # 训练设置标签页 (使用 dataset_id 而不是 dataset_name)
+        self.training_tab = TrainingTab(self.dataset_id, 0, self)
         self.training_tab.training_completed.connect(self.on_training_completed)
         tabs.addTab(self.training_tab, "训练设置")
 
@@ -142,7 +164,19 @@ class DatasetDetailDialog(QDialog):
     def load_dataset_info(self):
         """加载训练集信息"""
         try:
-            dataset_info = self.dataset_manager.get_dataset_info_by_name(self.dataset_name)
+            # 从数据库加载训练任务信息
+            session = db_manager.get_session()
+            try:
+                task = session.query(TrainingTask).filter_by(id=self.dataset_id).first()
+                if task:
+                    self.dataset_name = task.task_name
+                    self.edit_name.setText(self.dataset_name)
+                    self._last_saved_name = self.dataset_name
+            finally:
+                session.close()
+
+            # 加载数据集统计信息
+            dataset_info = self.dataset_manager.get_dataset_info_by_name(self.dataset_id)
 
             if dataset_info:
                 total_images = dataset_info['total_images']
@@ -161,7 +195,7 @@ class DatasetDetailDialog(QDialog):
             # 加载图片列表
             self.images_tab.load_images()
 
-            logger.info(f"加载训练集信息成功: {self.dataset_name}")
+            logger.info(f"加载训练集信息成功: {self.dataset_id}")
 
         except Exception as e:
             logger.error(f"加载训练集信息失败: {str(e)}")
@@ -191,11 +225,45 @@ class DatasetDetailDialog(QDialog):
 
     def eventFilter(self, obj, event):
         """事件过滤器，用于监听焦点事件"""
-        if obj == self.edit_remark:
-            # 当失去焦点时保存
+        if obj == self.edit_name:
+            # 当失去焦点时保存名称
+            if event.type() == event.FocusOut:
+                self.save_name_on_focus_out()
+        elif obj == self.edit_remark:
+            # 当失去焦点时保存备注
             if event.type() == event.FocusOut:
                 self.save_remark_on_focus_out()
         return super().eventFilter(obj, event)
+
+    def save_name_on_focus_out(self):
+        """失去焦点时保存名称"""
+        current_name = self.edit_name.text().strip()
+
+        # 如果内容没有变化或为空，不保存
+        if not current_name or current_name == self._last_saved_name:
+            return
+
+        # 立即保存
+        self._save_dataset_name_to_db(current_name)
+        self._last_saved_name = current_name
+        self.dataset_name = current_name
+        logger.info(f"训练集名称已自动保存: {current_name}")
+
+    def _save_dataset_name_to_db(self, name: str) -> bool:
+        """保存训练集名称到数据库"""
+        try:
+            session = db_manager.get_session()
+            try:
+                task = session.query(TrainingTask).filter_by(id=self.dataset_id).first()
+                if task:
+                    task.task_name = name
+                    session.commit()
+                    return True
+            finally:
+                session.close()
+        except Exception as e:
+            logger.error(f"保存训练集名称失败: {str(e)}")
+        return False
 
     def save_remark_on_focus_out(self):
         """失去焦点时保存备注"""

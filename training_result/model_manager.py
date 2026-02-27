@@ -56,11 +56,24 @@ class ModelManager:
                         model_info["is_default"] = version.is_default
                         model_info["created_time"] = version.created_at
                         model_info["training_task_id"] = version.training_task_id
+
                         # 获取关联的训练任务信息
-                        training_task = session.get(TrainingTask, version.training_task_id)
-                        if training_task:
-                            model_info["task_name"] = training_task.task_name
-                            model_info["task_description"] = training_task.task_description
+                        if version.training_task_id:
+                            training_task = session.get(TrainingTask, version.training_task_id)
+                            if training_task:
+                                model_info["task_name"] = training_task.task_name
+                                model_info["task_description"] = training_task.task_description
+                                # 从dataset_path中提取训练集名称
+                                if training_task.dataset_path:
+                                    dataset_name = self._extract_dataset_name_from_path(training_task.dataset_path)
+                                    model_info["dataset_name"] = dataset_name
+                            else:
+                                model_info["task_name"] = "未知任务"
+                                model_info["dataset_name"] = "未知"
+                        else:
+                            model_info["task_name"] = "直接训练"
+                            model_info["dataset_name"] = "未知"
+
                         self.models.append(model_info)
                 else:
                     logger.warning(f"模型文件不存在: {model_path}")
@@ -93,10 +106,26 @@ class ModelManager:
                             model_info["training_task_id"] = None
                             model_info["task_name"] = "手动导入"
                             model_info["task_description"] = "用户手动导入的模型"
+                            model_info["dataset_name"] = "手动导入"
                             self.models.append(model_info)
 
         logger.info(f"成功加载 {len(self.models)} 个模型文件")
-        
+
+    def _extract_dataset_name_from_path(self, path: str) -> str:
+        """从路径中提取训练集名称"""
+        try:
+            # 路径格式: training_data/{dataset_name} 或类似
+            if 'training_data' in path:
+                parts = path.replace('\\', '/').split('/')
+                if 'training_data' in parts:
+                    idx = parts.index('training_data')
+                    if idx + 1 < len(parts):
+                        return parts[idx + 1]
+            # 如果找不到,返回路径的最后部分
+            return os.path.basename(path)
+        except:
+            return "未知"
+
     def _get_model_info(self, model_path):
         """获取模型文件信息
         

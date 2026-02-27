@@ -9,8 +9,10 @@
 import logging
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QLabel, QPushButton, QFileDialog, QMessageBox
+    QLabel, QPushButton, QFileDialog, QMessageBox, QTableWidget,
+    QTableWidgetItem, QHeaderView, QAbstractItemView
 )
+from PyQt5.QtCore import Qt
 
 from training_result.model_manager import model_manager
 
@@ -23,7 +25,10 @@ class TrainingResultTab(QWidget):
     def __init__(self, parent=None):
         """初始化训练结果标签页"""
         super().__init__(parent)
+        self.current_model_name = None
+        self.current_model_path = None
         self._init_ui()
+        self.refresh_model_list()
 
     def _init_ui(self):
         """初始化界面"""
@@ -33,30 +38,169 @@ class TrainingResultTab(QWidget):
         model_group = QGroupBox("模型管理")
         model_layout = QVBoxLayout(model_group)
 
-        # 标题
-        model_layout.addWidget(QLabel("训练模型列表"))
+        # 模型列表
+        self.model_table = QTableWidget()
+        self.model_table.setColumnCount(7)
+        self.model_table.setHorizontalHeaderLabels(["模型文件", "训练集名称", "任务名称", "创建时间", "版本", "默认", "大小"])
+        self.model_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.model_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.model_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.model_table.cellClicked.connect(self.on_model_selected)
+        self.model_table.setAlternatingRowColors(True)
+        model_layout.addWidget(self.model_table)
 
         # 模型操作按钮
+        btn_refresh = QPushButton("刷新列表")
+        btn_refresh.clicked.connect(self.refresh_model_list)
+
         btn_import_model = QPushButton("导入模型")
         btn_import_model.clicked.connect(self.import_model)
 
         btn_delete_model = QPushButton("删除模型")
         btn_delete_model.clicked.connect(self.delete_model)
 
-        btn_compare_models = QPushButton("对比模型")
-        btn_compare_models.clicked.connect(self.compare_models)
-
-        btn_set_default = QPushButton("设置默认模型")
+        btn_set_default = QPushButton("设为默认")
         btn_set_default.clicked.connect(self.set_default_model)
 
         button_layout = QHBoxLayout()
+        button_layout.addWidget(btn_refresh)
         button_layout.addWidget(btn_import_model)
         button_layout.addWidget(btn_delete_model)
-        button_layout.addWidget(btn_compare_models)
         button_layout.addWidget(btn_set_default)
 
         model_layout.addLayout(button_layout)
         layout.addWidget(model_group)
+
+    def refresh_model_list(self):
+        """刷新模型列表"""
+        try:
+            # 重新加载模型
+            model_manager.load_models()
+
+            # 清空表格
+            self.model_table.setRowCount(0)
+
+            # 填充模型信息
+            for i, model in enumerate(model_manager.models):
+                self.model_table.insertRow(i)
+
+                # 模型文件名
+                filename = model.get('filename', '')
+                self.model_table.setItem(i, 0, QTableWidgetItem(filename))
+
+                # 训练集名称
+                dataset_name = model.get('dataset_name', self._extract_dataset_name(model.get('path', '')))
+                self.model_table.setItem(i, 1, QTableWidgetItem(dataset_name))
+
+                # 任务名称
+                task_name = model.get('task_name', '手动导入')
+                self.model_table.setItem(i, 2, QTableWidgetItem(task_name))
+
+                # 创建时间
+                created_time = model.get('created_time', '')
+                if created_time:
+                    created_str = created_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(created_time, 'strftime') else str(created_time)
+                else:
+                    created_str = ''
+                self.model_table.setItem(i, 3, QTableWidgetItem(created_str))
+
+                # 版本
+                version = model.get('version', '')
+                self.model_table.setItem(i, 4, QTableWidgetItem(str(version)))
+
+                # 是否默认
+                is_default = model.get('is_default', False)
+                default_item = QTableWidgetItem('是' if is_default else '否')
+                if is_default:
+                    default_item.setForeground(Qt.green)
+                self.model_table.setItem(i, 5, default_item)
+
+                # 文件大小
+                size = model.get('size', 0)
+                size_str = self._format_size(size)
+                self.model_table.setItem(i, 6, QTableWidgetItem(size_str))
+
+            logger.info(f"刷新模型列表完成,共 {len(model_manager.models)} 个模型")
+
+        except Exception as e:
+            logger.error(f"刷新模型列表失败: {str(e)}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"刷新模型列表失败: {str(e)}")
+
+    def _format_size(self, size_bytes: int) -> str:
+        """格式化文件大小"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.2f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.2f} TB"
+
+    def _extract_dataset_name(self, model_path: str) -> str:
+        """从模型路径中提取训练集名称"""
+        try:
+            # 模型路径格式: training_data/{dataset_name}/models/train_run/weights/best.pt
+            # 或者 models/{dataset_name}_model/best.pt
+            if 'training_data' in model_path:
+                # 从 training_data/{dataset_name} 提取
+                parts = model_path.replace('\\', '/').split('/')
+                if 'training_data' in parts:
+                    idx = parts.index('training_data')
+                    if idx + 1 < len(parts):
+                        return parts[idx + 1]
+            elif 'models' in model_path:
+                # 从 models/{dataset_name}_model 提取
+                import re
+                match = re.search(r'models/([^/]+)_model', model_path.replace('\\', '/'))
+                if match:
+                    return match.group(1)
+        except:
+            pass
+        return '未知'
+
+    def on_model_selected(self, row, column):
+        """选择模型时的回调"""
+        if row >= 0 and row < self.model_table.rowCount():
+            model_name_item = self.model_table.item(row, 0)
+            if model_name_item:
+                self.current_model_name = model_name_item.text()
+                # 查找对应的模型路径
+                for model in model_manager.models:
+                    if model.get('filename') == self.current_model_name:
+                        self.current_model_path = model.get('path')
+                        # 显示模型详细信息
+                        self._show_model_details(model)
+                        logger.info(f"选择模型: {self.current_model_name}")
+                        break
+
+    def _show_model_details(self, model_info: dict):
+        """显示模型详细信息"""
+        details = [
+            f"模型文件: {model_info.get('filename', '')}",
+            f"模型路径: {model_info.get('path', '')}",
+            f"训练集名称: {model_info.get('dataset_name', '未知')}",
+            f"任务名称: {model_info.get('task_name', '未知')}",
+            f"任务描述: {model_info.get('task_description', '')}",
+            f"创建时间: {model_info.get('created_time', '')}",
+            f"版本: {model_info.get('version', '')}",
+            f"是否默认: {'是' if model_info.get('is_default', False) else '否'}",
+            f"文件大小: {self._format_size(model_info.get('size', 0))}",
+        ]
+
+        # 如果有类别信息,也显示
+        if 'classes' in model_info and model_info['classes']:
+            details.append(f"检测类别: {', '.join(model_info['classes'])}")
+
+        # 如果有参数数量,也显示
+        if 'params' in model_info:
+            details.append(f"模型参数: {model_info['params']:,}")
+
+        # 使用状态栏显示简要信息(如果有状态栏)
+        try:
+            main_window = self.window()
+            if hasattr(main_window, 'statusBar'):
+                info = f"{model_info.get('dataset_name', '未知')} - {model_info.get('filename', '')}"
+                main_window.statusBar().showMessage(info, 5000)
+        except:
+            pass
 
     def import_model(self):
         """导入模型文件"""
@@ -75,6 +219,7 @@ class TrainingResultTab(QWidget):
 
                 if result:
                     QMessageBox.information(self, "成功", f"模型导入成功: {result['filename']}")
+                    self.refresh_model_list()
                 else:
                     QMessageBox.warning(self, "警告", "模型导入失败")
 
@@ -86,8 +231,33 @@ class TrainingResultTab(QWidget):
 
     def delete_model(self):
         """删除模型文件"""
-        logger.info("删除模型文件")
-        QMessageBox.information(self, "提示", "删除模型功能暂未实现")
+        if not self.current_model_name:
+            QMessageBox.warning(self, "警告", "请先选择要删除的模型")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定要删除选中的模型吗？\n\n模型: {self.current_model_name}\n路径: {self.current_model_path}",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                # 从数据库中删除
+                success = model_manager.delete_model(self.current_model_name)
+
+                if success:
+                    QMessageBox.information(self, "成功", "模型删除成功")
+                    self.current_model_name = None
+                    self.current_model_path = None
+                    self.refresh_model_list()
+                else:
+                    QMessageBox.warning(self, "警告", "模型删除失败")
+
+            except Exception as e:
+                logger.error(f"删除模型文件出错: {str(e)}")
+                QMessageBox.critical(self, "错误", f"删除模型文件出错: {str(e)}")
 
     def compare_models(self):
         """对比模型"""
@@ -96,5 +266,20 @@ class TrainingResultTab(QWidget):
 
     def set_default_model(self):
         """设置默认模型"""
-        logger.info("设置默认模型")
-        QMessageBox.information(self, "提示", "设置默认模型功能暂未实现")
+        if not self.current_model_name:
+            QMessageBox.warning(self, "警告", "请先选择要设为默认的模型")
+            return
+
+        try:
+            success = model_manager.set_default_model(self.current_model_name)
+
+            if success:
+                QMessageBox.information(self, "成功", "已设置为默认模型")
+                self.refresh_model_list()
+            else:
+                QMessageBox.warning(self, "警告", "设置默认模型失败")
+
+        except Exception as e:
+            logger.error(f"设置默认模型出错: {str(e)}")
+            QMessageBox.critical(self, "错误", f"设置默认模型出错: {str(e)}")
+

@@ -103,23 +103,59 @@ class TrainingResultSaver:
             结果信息字典
         """
         try:
+            self.log_manager.emit_log(f"开始保存训练结果: {dataset_name}")
+
             # 获取最佳模型路径
             best_model_path = self.get_best_model_path(dataset_name)
 
             if not best_model_path:
+                self.log_manager.emit_log(f"未找到最佳模型文件")
                 return {"model_path": None, "metrics": {}}
+
+            self.log_manager.emit_log(f"找到最佳模型: {best_model_path}")
 
             # 同步到训练结果管理目录
             result_dir = self.sync_to_result_dir(dataset_name, best_model_path)
 
             metrics = self.extract_metrics(results)
 
-            return {
-                "model_path": str(best_model_path),
-                "model_result_path": str(result_dir / "best.pt"),
-                "model_name": f"{dataset_name}_model",
-                "metrics": metrics
-            }
+            # 注册到数据库的模型版本表
+            session = db_manager.get_session()
+            try:
+                model_version = ModelVersion(
+                    training_task_id=None,  # 没有任务ID的训练
+                    model_path=str(best_model_path),
+                    version="1.0",
+                    is_default=False,
+                    file_size=best_model_path.stat().st_size if best_model_path.exists() else 0
+                )
+
+                session.add(model_version)
+                session.commit()
+
+                self.log_manager.emit_log(f"模型已注册到数据库: {model_version.id}")
+
+                return {
+                    "model_path": str(best_model_path),
+                    "model_result_path": str(result_dir / "best.pt"),
+                    "model_name": f"{dataset_name}_model",
+                    "metrics": metrics,
+                    "model_version_id": model_version.id
+                }
+
+            except Exception as e:
+                self.log_manager.emit_log(f"保存模型版本失败: {str(e)}")
+                logger.error(f"保存模型版本失败: {str(e)}", exc_info=True)
+                session.rollback()
+                # 即使数据库保存失败,仍然返回基本信息
+                return {
+                    "model_path": str(best_model_path),
+                    "model_result_path": str(result_dir / "best.pt"),
+                    "model_name": f"{dataset_name}_model",
+                    "metrics": metrics
+                }
+            finally:
+                session.close()
 
         except Exception as e:
             self.log_manager.emit_log(f"保存训练结果失败: {str(e)}")
@@ -155,13 +191,12 @@ class TrainingResultSaver:
             # 创建模型版本记录
             session = db_manager.get_session()
             try:
-                metrics = self.extract_metrics(results)
-
                 model_version = ModelVersion(
-                    task_id=task_id,
+                    training_task_id=task_id,
                     model_path=str(best_model_path),
                     version="1.0",
-                    metrics=metrics
+                    is_default=False,
+                    file_size=best_model_path.stat().st_size if best_model_path.exists() else 0
                 )
 
                 session.add(model_version)
