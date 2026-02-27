@@ -16,7 +16,7 @@ from PyQt5.QtGui import QCloseEvent
 
 from global_support.task_scheduler import task_scheduler
 from recognition.screen_recognition import recognition_manager
-from gui.tabs import TrainingTab, TrainingResultTab, RecognitionTab, SettingsTab
+from gui.tabs import TrainingTab, TrainingResultTab, RecognitionTab, RecognitionTestTab, RecognitionActionTab, SettingsTab
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +76,16 @@ class MainWindow(QMainWindow):
         self.training_result_tab = TrainingResultTab()
         self.tabs.addTab(self.training_result_tab, "训练结果")
 
-        self.recognition_tab = RecognitionTab()
-        self.tabs.addTab(self.recognition_tab, "识别")
+        # 识别标签页 - 保留原有的识别标签页（或可替换为新的两个标签页）
+        # self.recognition_tab = RecognitionTab()
+        # self.tabs.addTab(self.recognition_tab, "识别")
+
+        # 新增：识别测试和识别操作标签页
+        self.recognition_test_tab = RecognitionTestTab()
+        self.tabs.addTab(self.recognition_test_tab, "识别测试")
+
+        self.recognition_action_tab = RecognitionActionTab()
+        self.tabs.addTab(self.recognition_action_tab, "识别操作")
 
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "设置")
@@ -128,8 +136,13 @@ class MainWindow(QMainWindow):
 
     def update_recognition_stats(self):
         """更新识别统计信息"""
-        if hasattr(self, 'recognition_tab'):
-            self.recognition_tab.update_stats()
+        # 更新识别测试标签页统计
+        if hasattr(self, 'recognition_test_tab'):
+            self.recognition_test_tab._update_stats()
+
+        # 更新识别操作标签页统计
+        if hasattr(self, 'recognition_action_tab'):
+            self.recognition_action_tab._update_stats()
 
     def open_log_viewer(self):
         """打开日志查看窗口"""
@@ -148,7 +161,15 @@ class MainWindow(QMainWindow):
         """关闭事件处理"""
         logger.info("应用程序即将关闭")
 
-        # 停止所有任务
+        # 停止识别测试标签页的识别任务
+        if hasattr(self, 'recognition_test_tab'):
+            self.recognition_test_tab.close()
+
+        # 停止识别操作标签页的识别任务
+        if hasattr(self, 'recognition_action_tab'):
+            self.recognition_action_tab.close()
+
+        # 停止所有任务（原有的识别管理器）
         if recognition_manager.is_recognition_active():
             recognition_manager.stop_recognition_task()
 
