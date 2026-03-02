@@ -121,7 +121,10 @@ class RecognitionTestTab(QWidget):
             models = model_manager.get_model_list()
             self.model_combo.clear()
             for model in models:
-                self.model_combo.addItem(model["filename"], model["path"])
+                # 显示格式：模型名 (结果集名)
+                dataset_name = model.get("dataset_name", "未知")
+                display_text = f"{model['filename']} ({dataset_name})"
+                self.model_combo.addItem(display_text, model["path"])
         except Exception as e:
             logger.error(f"加载模型列表失败: {str(e)}")
 
