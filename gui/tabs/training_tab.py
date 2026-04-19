@@ -18,6 +18,7 @@ from PyQt5.QtCore import Qt
 from training.task.dataset_manager import DatasetManager
 from training.dataset_path_manager import DatasetPathManager
 from global_support.database import db_manager, TrainingTask
+from gui.detail_tabs.training_tab import TrainingTab as TrainingDetailTab
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,26 @@ class TrainingTab(QWidget):
 
         # 训练集操作按钮
         dataset_button_layout = QHBoxLayout()
-        self.btn_create_dataset = QPushButton("新建训练集")
+        self.btn_create_dataset = QPushButton("+ 新建训练集")
+        self.btn_create_dataset.setMinimumHeight(40)
+        self.btn_create_dataset.setMinimumWidth(160)
+        self.btn_create_dataset.setCursor(Qt.PointingHandCursor)
+        self.btn_create_dataset.setStyleSheet(
+            "QPushButton {"
+            " background-color: #4CAF50;"
+            " color: white;"
+            " font-size: 14px;"
+            " font-weight: bold;"
+            " padding: 8px 20px;"
+            " border: none;"
+            " border-radius: 4px;"
+            "}"
+            "QPushButton:hover { background-color: #45a049; }"
+            "QPushButton:pressed { background-color: #3d8b40; }"
+        )
         self.btn_create_dataset.clicked.connect(self.create_dataset)
         dataset_button_layout.addWidget(self.btn_create_dataset)
+        dataset_button_layout.addStretch()
         dataset_layout.addLayout(dataset_button_layout)
 
         # 训练集表格
@@ -58,7 +76,8 @@ class TrainingTab(QWidget):
         self.dataset_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.dataset_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.dataset_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self.dataset_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.dataset_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+        self.dataset_table.setColumnWidth(5, 280)
         self.dataset_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.dataset_table.setSelectionMode(QTableWidget.SingleSelection)
         self.dataset_table.verticalHeader().setVisible(False)
@@ -119,19 +138,32 @@ class TrainingTab(QWidget):
                 # 操作按钮列
                 btn_widget = QWidget()
                 btn_layout = QHBoxLayout(btn_widget)
-                btn_layout.setContentsMargins(4, 2, 4, 2)
+                btn_layout.setContentsMargins(6, 2, 6, 2)
+                btn_layout.setSpacing(6)
 
                 btn_open = QPushButton("打开详情")
+                btn_open.setMinimumWidth(80)
                 btn_open.setStyleSheet("padding: 4px 8px;")
                 btn_open.clicked.connect(lambda checked, r=row: self.open_dataset_detail(r))
 
+                btn_train = QPushButton("训练")
+                btn_train.setMinimumWidth(60)
+                if annotated_images > 0:
+                    btn_train.setStyleSheet("padding: 4px 8px; background-color: #2196F3; color: white;")
+                    btn_train.setToolTip("开始训练该训练集")
+                else:
+                    btn_train.setEnabled(False)
+                    btn_train.setToolTip("尚未标注任何图片，请先完成标注")
+                btn_train.clicked.connect(lambda checked, r=row: self.start_training_by_row(r))
+
                 btn_delete = QPushButton("删除")
+                btn_delete.setMinimumWidth(60)
                 btn_delete.setStyleSheet("padding: 4px 8px; background-color: #f44336; color: white;")
                 btn_delete.clicked.connect(lambda checked, r=row: self.delete_dataset_by_row(r))
 
                 btn_layout.addWidget(btn_open)
+                btn_layout.addWidget(btn_train)
                 btn_layout.addWidget(btn_delete)
-                btn_layout.addStretch()
                 self.dataset_table.setCellWidget(row, 5, btn_widget)
 
             logger.info(f"加载训练集成功: 共 {len(tasks)} 个训练集")
@@ -268,6 +300,31 @@ class TrainingTab(QWidget):
             logger.error(f"打开训练集详情失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"打开训练集详情失败: {str(e)}")
 
+    def start_training_by_row(self, row: int):
+        """根据行号启动训练对话框"""
+        try:
+            item_name = self.dataset_table.item(row, 0)
+            item_annotated = self.dataset_table.item(row, 3)
+            if not item_name:
+                return
+
+            dataset_id = item_name.data(Qt.UserRole)
+            dataset_name = item_name.text()
+            annotated = int(item_annotated.text()) if item_annotated else 0
+
+            if annotated <= 0:
+                QMessageBox.warning(self, "无法训练", "该训练集尚未标注任何图片，请先完成标注。")
+                return
+
+            dialog = TrainingLauncherDialog(dataset_id, dataset_name, annotated, self)
+            dialog.training_completed.connect(self.load_datasets)
+            dialog.exec_()
+            self.load_datasets()
+
+        except Exception as e:
+            logger.error(f"启动训练失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"启动训练失败: {str(e)}")
+
     def delete_dataset_by_row(self, row: int):
         """根据行号删除训练集"""
         try:
@@ -319,3 +376,23 @@ class TrainingTab(QWidget):
         except Exception as e:
             logger.error(f"删除训练集失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"删除训练集失败: {str(e)}")
+
+
+class TrainingLauncherDialog(QDialog):
+    """训练启动对话框 - 在训练集列表上直接触发训练"""
+
+    from PyQt5.QtCore import pyqtSignal
+    training_completed = pyqtSignal()
+
+    def __init__(self, dataset_id: str, dataset_name: str, annotated_count: int, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setWindowTitle(f"训练 - {dataset_name}")
+        self.setMinimumSize(800, 600)
+        self.resize(800, 600)
+
+        layout = QVBoxLayout(self)
+
+        self.training_widget = TrainingDetailTab(dataset_id, annotated_count, self)
+        self.training_widget.training_completed.connect(self.training_completed.emit)
+        layout.addWidget(self.training_widget)

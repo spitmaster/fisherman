@@ -9,7 +9,7 @@
 import logging
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
-    QLabel, QGroupBox, QTabWidget, QMessageBox, QTextEdit, QLineEdit
+    QLabel, QGroupBox, QMessageBox, QTextEdit, QLineEdit
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -17,7 +17,6 @@ from PyQt5.QtGui import QFont
 from training.task.dataset_manager import DatasetManager
 from training.dataset_path_manager import DatasetPathManager
 from gui.detail_tabs.images_tab import ImagesTab
-from gui.detail_tabs.training_tab import TrainingTab
 from global_support.database import db_manager, TrainingTask
 
 logger = logging.getLogger(__name__)
@@ -130,26 +129,14 @@ class DatasetDetailDialog(QDialog):
         stats_group.setLayout(stats_layout)
         layout.addWidget(stats_group)
 
-        # 功能标签页
-        tabs = QTabWidget()
-
-        # 图片管理标签页 (使用 dataset_id 而不是 dataset_name)
+        # 图片管理 (使用 dataset_id 而不是 dataset_name)
         self.images_tab = ImagesTab(self.dataset_id, self)
         self.images_tab.images_imported.connect(self.on_images_imported)
         self.images_tab.images_deleted.connect(self.on_images_deleted)
         self.images_tab.annotation_completed.connect(self.on_annotation_completed)
         self.images_tab.set_parent_dialog(self)  # 设置父对话框,用于启动标注工具
-        tabs.addTab(self.images_tab, "图片管理")
 
-        # 训练设置标签页 (使用 dataset_id 而不是 dataset_name)
-        self.training_tab = TrainingTab(self.dataset_id, 0, self)
-        self.training_tab.training_completed.connect(self.on_training_completed)
-        tabs.addTab(self.training_tab, "训练设置")
-
-        # 设置标签页切换时的回调
-        tabs.currentChanged.connect(self.on_tab_changed)
-
-        layout.addWidget(tabs)
+        layout.addWidget(self.images_tab)
 
         # 底部按钮
         button_layout = QHBoxLayout()
@@ -189,9 +176,6 @@ class DatasetDetailDialog(QDialog):
                 self.label_unannotated_count.setText(f"未标注: {unannotated}")
                 self.label_annotation_progress.setText(f"标注进度: {progress:.1f}%")
 
-                # 更新训练标签页的按钮状态
-                self.training_tab.update_annotated_count(annotated_images)
-
             # 加载图片列表
             self.images_tab.load_images()
 
@@ -200,11 +184,6 @@ class DatasetDetailDialog(QDialog):
         except Exception as e:
             logger.error(f"加载训练集信息失败: {str(e)}")
             QMessageBox.warning(self, "错误", f"加载训练集信息失败: {str(e)}")
-
-    def on_tab_changed(self, index):
-        """标签页切换时的回调"""
-        tab_name = ["图片管理", "训练设置"][index]
-        logger.info(f"切换到标签页: {tab_name}")
 
     def on_images_imported(self, count):
         """图片导入成功回调"""
@@ -217,10 +196,6 @@ class DatasetDetailDialog(QDialog):
     def on_annotation_completed(self):
         """标注完成回调"""
         self.load_dataset_info()
-        self.annotation_completed.emit()
-
-    def on_training_completed(self):
-        """训练完成回调"""
         self.annotation_completed.emit()
 
     def eventFilter(self, obj, event):
