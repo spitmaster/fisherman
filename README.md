@@ -4,11 +4,22 @@
 
 ## 快速开始
 
-### 1. 安装Python
+### 1. 安装 uv
 
-确保已安装 Python 3.8 或更高版本：
-- 下载地址: https://www.python.org/downloads/
-- **重要**: 安装时请勾选 "Add Python to PATH"
+本项目使用 [uv](https://docs.astral.sh/uv/) 管理 Python 环境与依赖。
+
+```powershell
+# Windows PowerShell 一键安装
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+或通过 pip 安装：
+
+```bash
+pip install uv
+```
+
+uv 会自动下载和管理 Python 解释器，无需单独安装 Python。
 
 ### 2. 克隆代码库
 
@@ -19,22 +30,21 @@ cd fisherman
 
 ### 3. 运行程序
 
-**Windows用户**（推荐）：
+**Windows 用户**（推荐）：
 双击运行 `启动_Fisherman.bat`
 
 启动器会自动：
-- ✅ 检查Python环境
-- ✅ 检测并安装缺失的依赖（首次运行3-5分钟）
-- ✅ 检查系统组件
-- ✅ 启动Fisherman程序
+- ✅ 检查 uv 环境
+- ✅ 通过 `uv sync` 创建虚拟环境并安装依赖（首次 3-5 分钟）
+- ✅ 启动 Fisherman 程序
 
 **手动运行**：
 ```bash
-# 安装依赖
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 同步依赖（首次会在 .venv 目录创建虚拟环境）
+uv sync
 
 # 运行程序
-python main.py
+uv run python main.py
 ```
 
 ## 功能说明
@@ -77,19 +87,21 @@ python main.py
 - pyautogui (自动点击)
 - SQLAlchemy (数据库)
 
-完整依赖列表见 [requirements.txt](requirements.txt)
+完整依赖列表见 [pyproject.toml](pyproject.toml)
 
 ## 故障排除
 
-### 提示"未检测到Python"
-- 安装Python 3.8+：https://www.python.org/downloads/
-- 安装时务必勾选 "Add Python to PATH"
-- 安装后重启命令行窗口
+### 提示"未检测到 uv"
+- 按照上文"安装 uv"小节安装
+- 安装后重启命令行窗口使 PATH 生效
 
-### 依赖安装失败
+### 依赖同步失败
 ```bash
-# 手动安装依赖
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 查看详细日志
+uv sync --verbose
+
+# 清理环境后重试
+rm -rf .venv && uv sync
 ```
 
 ### 提示"PyTorch库不可用"
@@ -99,7 +111,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ### 其他问题
 - 查看日志文件: `logs/fisherman.log`
 - 确保网络连接正常（首次运行需要下载依赖）
-- 尝试重新安装依赖: `pip install -r requirements.txt --force-reinstall`
+- 强制重建环境: 删除 `.venv` 目录后重新执行 `uv sync`
 
 ## 项目结构
 
@@ -107,7 +119,8 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 fisherman/
 ├── main.py                 # 程序主入口
 ├── 启动_Fisherman.bat       # Windows启动脚本
-├── requirements.txt        # 依赖清单
+├── pyproject.toml          # 项目元数据与依赖（uv 管理）
+├── uv.lock                 # 依赖锁定文件（uv 自动生成）
 ├── database_migration.py   # 数据库迁移脚本
 ├── gui/                    # 图形界面模块
 ├── recognition/            # 识别模块
@@ -119,7 +132,7 @@ fisherman/
 └── training_data/          # 训练数据目录（自动创建）
 ```
 
-详细项目结构说明见 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+详细设计文档见 [design/](design/README.md)
 
 ## 技术栈
 

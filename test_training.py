@@ -170,7 +170,7 @@ if __name__ == "__main__":
     
     if not deps_ok:
         logger.error(f"缺少依赖: {missing_deps}")
-        logger.info("请运行: pip install -r requirements.txt")
+        logger.info("请运行: uv sync")
         sys.exit(1)
     
     # 测试训练模块

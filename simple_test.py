@@ -49,7 +49,7 @@ def check_project_structure():
     
     required_files = [
         "main.py",
-        "requirements.txt",
+        "pyproject.toml",
         "README.md",
         "diagnose_pytorch.py",
         "__init__.py",
