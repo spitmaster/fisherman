@@ -28,9 +28,12 @@ class ScreenAreaSelector(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setCursor(Qt.CrossCursor)
 
-        # 覆盖所有屏幕
-        screen = QGuiApplication.primaryScreen()
-        geo = screen.virtualGeometry()
+        # 覆盖所有屏幕：遍历所有 QScreen 求并集，避免某些驱动下 virtualGeometry 不完整
+        geo = QRect()
+        for scr in QGuiApplication.screens():
+            geo = geo.united(scr.geometry())
+        if geo.isEmpty():
+            geo = QGuiApplication.primaryScreen().virtualGeometry()
         self.setGeometry(geo)
         self._origin = geo.topLeft()
 

@@ -13,12 +13,14 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QPushButton, QTextEdit, QComboBox,
-    QSlider, QMessageBox
+    QSlider, QMessageBox, QSplitter, QCheckBox
 )
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from PyQt5.QtGui import QImage, QPixmap
 
 from training_result.model_manager import model_manager
 from recognition.screen_recognition import ScreenRecognition
+from recognition.visualizer import draw_detections
 from gui.screen_area_selector import ScreenAreaSelector
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,7 @@ class RecognitionTestTab(QWidget):
 
     # 跨线程信号：识别回调在后台线程执行，通过信号切回主线程更新 UI
     detections_received = pyqtSignal(list)
+    frame_received = pyqtSignal(object, list)
     error_received = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -37,6 +40,7 @@ class RecognitionTestTab(QWidget):
         self.recognition = None
         self.monitor_area = None  # (x, y, width, height)
         self._selector = None
+        self._preview_logged = False
         self._init_ui()
         self._connect_signals()
 
@@ -129,19 +133,38 @@ class RecognitionTestTab(QWidget):
         self.stats_label.setStyleSheet("font-weight: bold; padding: 4px;")
         result_layout.addWidget(self.stats_label)
 
-        # 清空按钮
+        # 工具栏：可视化开关 + 清空按钮
         toolbar = QHBoxLayout()
+        self.chk_preview = QCheckBox("实时预览画面")
+        self.chk_preview.setChecked(True)
+        self.chk_preview.toggled.connect(self._on_preview_toggled)
+        toolbar.addWidget(self.chk_preview)
         self.btn_clear = QPushButton("清空日志")
         self.btn_clear.clicked.connect(lambda: self.result_text.clear())
         toolbar.addWidget(self.btn_clear)
         toolbar.addStretch()
         result_layout.addLayout(toolbar)
 
-        # 详细结果
+        # 画面预览 + 文本日志：左右分栏，可拖动分隔
+        splitter = QSplitter(Qt.Horizontal)
+
+        self.preview_label = QLabel("预览（开始测试后显示画面）")
+        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setMinimumSize(320, 240)
+        self.preview_label.setStyleSheet(
+            "QLabel { background-color: #1e1e1e; color: #888; border: 1px solid #444; }"
+        )
+        splitter.addWidget(self.preview_label)
+
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
         self.result_text.setLineWrapMode(QTextEdit.NoWrap)
-        result_layout.addWidget(self.result_text)
+        splitter.addWidget(self.result_text)
+
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([720, 240])
+        result_layout.addWidget(splitter, 1)
 
         layout.addWidget(result_group, 1)
 
@@ -156,6 +179,7 @@ class RecognitionTestTab(QWidget):
     def _connect_signals(self):
         """连接跨线程信号"""
         self.detections_received.connect(self._on_detections_main_thread)
+        self.frame_received.connect(self._on_frame_main_thread)
         self.error_received.connect(self._on_error_main_thread)
 
     def _load_models(self):
@@ -202,8 +226,10 @@ class RecognitionTestTab(QWidget):
             self._selector = ScreenAreaSelector()
             self._selector.area_selected.connect(self._on_area_selected)
             self._selector.cancelled.connect(self._on_area_cancelled)
-            # 让主窗口短暂最小化以便选择（可选）
-            self._selector.showFullScreen()
+            # 使用 show() 而非 showFullScreen()，以便覆盖整个虚拟桌面（多显示器场景）
+            self._selector.show()
+            self._selector.activateWindow()
+            self._selector.raise_()
         except Exception as e:
             logger.error(f"选择区域失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"选择区域失败: {str(e)}")
@@ -260,7 +286,10 @@ class RecognitionTestTab(QWidget):
             # 设置识别结果回调（从后台线程切回主线程）
             self.recognition.on_recognition_result = self.detections_received.emit
             self.recognition.on_error = lambda e: self.error_received.emit(str(e))
+            if self.chk_preview.isChecked():
+                self.recognition.on_frame_result = self._emit_frame
 
+            self._preview_logged = False
             if self.recognition.start_recognition():
                 self.btn_start.setEnabled(False)
                 self.btn_stop.setEnabled(True)
@@ -302,6 +331,8 @@ class RecognitionTestTab(QWidget):
 
             self._append_log("")
             self._append_log("识别测试已停止")
+            self.preview_label.clear()
+            self.preview_label.setText("预览（开始测试后显示画面）")
         except Exception as e:
             logger.error(f"停止识别测试出错: {str(e)}", exc_info=True)
             QMessageBox.critical(self, "错误", f"停止识别测试出错: {str(e)}")
@@ -343,6 +374,42 @@ class RecognitionTestTab(QWidget):
     def _on_error_main_thread(self, err: str):
         """识别线程错误（主线程）"""
         self._append_log(f"[错误] {err}")
+
+    def _emit_frame(self, frame, detections):
+        """ScreenRecognition 后台线程回调；仅做线程切换，不在此处理图像。"""
+        self.frame_received.emit(frame, list(detections))
+
+    def _on_frame_main_thread(self, frame, detections):
+        """主线程：绘制检测框并更新预览控件"""
+        if frame is None or not self.chk_preview.isChecked():
+            return
+        try:
+            import numpy as np
+            import cv2
+
+            annotated = draw_detections(frame, detections)
+            rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+            rgb = np.ascontiguousarray(rgb)
+            height, width = rgb.shape[:2]
+            image = QImage(rgb.data, width, height, rgb.strides[0], QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(image.copy())
+            label_size = self.preview_label.size()
+            self.preview_label.setPixmap(
+                pixmap.scaled(label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+            if not self._preview_logged:
+                logger.info(f"预览首帧到达: {width}x{height}, 检测数 {len(detections)}")
+                self._preview_logged = True
+        except Exception as e:
+            logger.error(f"预览渲染出错: {e}", exc_info=True)
+
+    def _on_preview_toggled(self, checked: bool):
+        """切换可视化预览开关：运行中也生效"""
+        if self.recognition and self.recognition.is_running:
+            self.recognition.on_frame_result = self._emit_frame if checked else None
+        if not checked:
+            self.preview_label.clear()
+            self.preview_label.setText("预览已关闭")
 
     def _append_log(self, text: str):
         """写入日志区域（始终在主线程调用）"""

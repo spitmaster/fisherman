@@ -74,8 +74,13 @@ class ScreenRecognition:
         
         # 结果回调函数
         self.on_recognition_result = None
+        self.on_frame_result = None  # (frame_bgr, detections) — 需要可视化时订阅
         self.on_click_event = None
         self.on_error = None
+
+        # 可视化输出频率控制（单位秒；避免 UI 端被 20fps 淹没）
+        self.frame_emit_interval = 0.1
+        self._last_frame_emit_time = 0.0
         
         # 初始化屏幕监控
         self.sct = mss.mss()
@@ -187,10 +192,20 @@ class ScreenRecognition:
                 
                 # 目标检测
                 results = self._detect_objects(screenshot)
-                
+
                 # 处理检测结果
                 if results:
                     self._handle_detection_results(results)
+
+                # 可视化帧回调（限频）
+                if self.on_frame_result is not None:
+                    now = time.time()
+                    if now - self._last_frame_emit_time >= self.frame_emit_interval:
+                        self._last_frame_emit_time = now
+                        try:
+                            self.on_frame_result(screenshot, results or [])
+                        except Exception as emit_err:
+                            logger.error(f"帧回调出错: {emit_err}")
                     
             except Exception as e:
                 logger.error(f"识别过程出错: {str(e)}")
