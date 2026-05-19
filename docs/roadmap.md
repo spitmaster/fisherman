@@ -14,29 +14,18 @@
 
 ## 进行中
 
-### SDD 体系建立(2026-05-19 启动)
+### P0-1 recognition 多目标识别策略与健壮性(⏳ 2026-05-19 启动)
 
-把项目接入 SDD(Specification-Driven Development)规范,沉淀真相源 + 项目专属 agent。
+详见 [milestones/20260204.md M2 段](./milestones/20260204.md#m2--recognition-多目标识别策略与健壮性-)。
 
-**目标**:
-- ✅ 注入 SDD 脚手架(commit `42cc12f`)
-- ✅ 吸收 olddocs/原始设计文档/(commit `ee14e86`)
-- ✅ 生成 SPEC.md + 7 个 Fisherman 专属 agent(commit `ee14e86`)
-- ⏳ 三档规划体系(roadmap / milestones / todo)
-- ⏳ 项目根 CLAUDE.md
-- ⏳ 脚手架占位清理(可选)
-
-详见 [milestones/20260204.md](./milestones/20260204.md)。
-
----
-
-## P0 — 体验完成度(下一批次)
-
-### P0-1 recognition 多目标识别策略与健壮性
 - 多目标策略:Top-N / 轮询 / 几何过滤(Strategy 模式)
 - 错误处理与重试机制
 - FPS / 延迟性能调优
 - 责任 agent:[screen-recognition-engineer](./agents/screen-recognition-engineer.md)
+
+---
+
+## P0 — 体验完成度(下一批次)
 
 ### P0-2 training_result 模型对比视图
 - mAP / loss 曲线对比(同一图表内多个模型)
@@ -127,4 +116,5 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-05-19 | SDD 体系建立 ✅(M1 完结);P0-1 多目标识别策略启动(M2)。"进行中"区从 SDD 切换为 P0-1 |
 | 2026-05-19 | 初版。从 `olddocs/原始设计文档/09_roadmap.md` 吸收,按 SDD 三档规划分级到 P0/P1/P2 |
