@@ -72,14 +72,32 @@
 
 每个具体项目只写**自己的 orchestrator + overview**,复用上面的通用 agent。
 
-### 代码可视化阅读器(codeviz)
+### Fisherman(本项目)
 
-读取源码库生成 3D 业务流水视图,辅助程序员快速理解大型项目。
+Windows 桌面端的 YOLOv8 视觉自动化工具。技术栈:Python + PyQt5 + PyTorch CPU + Ultralytics YOLO + SQLAlchemy/SQLite + mss + pyautogui。真相源:[SPEC.md](../SPEC.md)。
 
 | 文档 | 说明 |
 | ---- | ---- |
-| [codeviz-overview.md](./codeviz-overview.md) | 项目层文档:agent 角色映射、中间表示 schema、红线、里程碑路径 |
-| [codeviz-orchestrator.md](./codeviz-orchestrator.md) | 项目主调度:任务拆解、契约对齐、全局联调 |
+| [fisherman-overview.md](./fisherman-overview.md) | 项目层文档:agent 角色映射、共享契约、架构不变量、里程碑路径 |
+| [fisherman-orchestrator.md](./fisherman-orchestrator.md) | 项目主调度:任务拆解、契约对齐、全局联调 |
+| [yolo-training-engineer.md](./yolo-training-engineer.md) | YOLOv8 训练管道(executor / trainer / callbacks / result saver) |
+| [screen-recognition-engineer.md](./screen-recognition-engineer.md) | 屏幕识别(mss 截图 + YOLO 推理 + pyautogui 点击 + FPS 优化) |
+| [pyqt5-ui-developer.md](./pyqt5-ui-developer.md) | PyQt5 主窗口 + Tabs + Dialogs + 跨线程信号槽 |
+| [sqlalchemy-db-engineer.md](./sqlalchemy-db-engineer.md) | SQLAlchemy ORM + SQLite schema + migration + 索引 |
+| [task-scheduler-engineer.md](./task-scheduler-engineer.md) | TaskScheduler + 优先级队列 + 线程模型 + 优雅关闭 |
+| [annotation-tool-engineer.md](./annotation-tool-engineer.md) | 标注子系统(Strategy 校验 + YOLO 格式 + 批量) |
+
+### 脚手架自带(其它项目示例,与 Fisherman 无关)
+
+下列 agent 是 sdd-starter 脚手架的内置示例,**与本项目无关**,可保留作参考或删除:
+
+| Agent | 来源项目 |
+| ----- | -------- |
+| [codeviz-overview.md](./codeviz-overview.md)、[codeviz-orchestrator.md](./codeviz-orchestrator.md) | 代码可视化阅读器(codeviz) |
+| [3d-rendering-engineer.md](./3d-rendering-engineer.md)、[3d-interaction-designer.md](./3d-interaction-designer.md) | 3D 可视化(codeviz 子任务) |
+| [business-translator.md](./business-translator.md)、[dataflow-tracer.md](./dataflow-tracer.md)、[io-entry-mapper.md](./io-entry-mapper.md) | 代码可视化通用能力 |
+| [miniprogram-orchestrator.md](./miniprogram-orchestrator.md)、[miniprogram-ui-developer.md](./miniprogram-ui-developer.md)、[miniapp-business-logic.md](./miniapp-business-logic.md)、[wx-cloud-backend.md](./wx-cloud-backend.md) | 微信小程序示例 |
+| [static-code-analyzer.md](./static-code-analyzer.md)、[fixture-validator.md](./fixture-validator.md)、[spec-docs-curator.md](./spec-docs-curator.md) | 通用能力(可保留) |
 
 ---
 
