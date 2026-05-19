@@ -1,9 +1,12 @@
 {
   "permissions": {
     "allow": [
+      "PowerShell(*)",
+      "Bash(*)",
       "Bash(pip --version)",
       "Bash(pip install *)",
-      "Bash(uv *)"
+      "Bash(uv *)",
+      "PowerShell($TEMP_DIR = Join-Path $env:TEMP \"sdd-starter-$\\(Get-Random\\)\"; git clone --depth 1 --branch main https://github.com/spitmaster/sdd-starter.git $TEMP_DIR; Write-Output \"TEMP_DIR=$TEMP_DIR\"; Get-ChildItem $TEMP_DIR | Select-Object Name, Mode)"
     ]
   }
 }
