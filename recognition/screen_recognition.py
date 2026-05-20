@@ -60,12 +60,15 @@ class ScreenRecognition:
         # 识别任务状态
         self.is_running = False
         self.is_paused = False
-        self.thread = None
-        
+        # 截图与推理解耦:两条独立线程
+        self._capture_thread = None
+        self._inference_thread = None
+
         # 统计信息
         self.recognitions_count = 0
         self.clicks_count = 0
-        self.fps = 0
+        self.fps = 0           # 推理 FPS(YOLO 一秒能跑几次)
+        self.preview_fps = 0   # 预览 FPS(截图/UI 一秒能刷几次)
         self.last_click_time = datetime.now()
         
         # 监控区域
@@ -78,12 +81,19 @@ class ScreenRecognition:
         self.on_click_event = None
         self.on_error = None
 
-        # 可视化输出频率控制（单位秒；避免 UI 端被 20fps 淹没）
-        self.frame_emit_interval = 0.1
-        self._last_frame_emit_time = 0.0
-        
-        # 初始化屏幕监控
-        self.sct = mss.mss()
+        # 预览帧率上限。30 对人眼足够顺滑,再高基本无收益、白吃 CPU
+        self.preview_fps_cap = 30
+
+        # 截图线程与推理线程之间的共享槽:
+        # _latest_frame 由截图线程写、推理 + 预览读;_latest_detections 由推理线程写、预览读。
+        # GIL 保证引用赋值原子,且每帧是新 ndarray、检测结果是新 list,所以不用 Lock。
+        self._latest_frame = None
+        self._latest_detections = []
+
+        # mss 实例必须在使用它的线程创建(内部用 threading.local 存 GDI device context),
+        # 跨线程访问会抛 "_thread._local object has no attribute 'srcdc'"。
+        # 真正实例在 _capture_loop 里建。
+        self.sct = None
         
     def set_monitor_area(self, x, y, width, height):
         """设置监控区域
@@ -119,13 +129,18 @@ class ScreenRecognition:
         self.recognitions_count = 0
         self.clicks_count = 0
         self.fps = 0
+        self.preview_fps = 0
+        self._latest_frame = None
+        self._latest_detections = []
         self.last_click_time = datetime.now()
-        
-        # 创建识别线程
-        self.thread = threading.Thread(target=self._recognition_loop, daemon=True)
-        self.thread.start()
-        
-        logger.info("识别任务启动成功")
+
+        # 双线程:截图/预览高频跑(~30 FPS),推理按 YOLO 实际速度跑(CPU ~10 FPS)
+        self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self._inference_thread = threading.Thread(target=self._inference_loop, daemon=True)
+        self._capture_thread.start()
+        self._inference_thread.start()
+
+        logger.info("识别任务启动成功(截图 + 推理双线程)")
         return True
         
     def pause_recognition(self):
@@ -156,64 +171,114 @@ class ScreenRecognition:
             
         self.is_running = False
         self.is_paused = False
-        
-        if self.thread:
-            self.thread.join(timeout=1)
-            self.thread = None
-            
+
+        if self._capture_thread:
+            self._capture_thread.join(timeout=1)
+            self._capture_thread = None
+        if self._inference_thread:
+            self._inference_thread.join(timeout=1)
+            self._inference_thread = None
+
         logger.info("识别任务已停止")
         return True
         
-    def _recognition_loop(self):
-        """识别循环"""
-        start_time = datetime.now()
-        frame_count = 0
-        
+    def _capture_loop(self):
+        """截图 + 预览线程。
+        与推理解耦,所以即使 YOLO 一秒只跑 5 次,这里仍可以跑到 preview_fps_cap(默认 30 FPS)。
+        每一轮:截图 → 写入共享 _latest_frame(供推理线程消费)→ emit on_frame_result(叠加推理线程
+        最近一次的检测框,可能略滞后但不影响预览顺滑)。
+        """
+        # mss 必须在当前线程实例化(threading.local 限制)
+        self.sct = mss.mss()
+        target_interval = 1.0 / max(self.preview_fps_cap, 1)
+        capture_start = datetime.now()
+        capture_count = 0
+
         while self.is_running:
             if self.is_paused:
                 time.sleep(0.1)
                 continue
-                
-            # 计算FPS
-            frame_count += 1
-            elapsed_time = (datetime.now() - start_time).total_seconds()
-            if elapsed_time >= 1:
-                self.fps = frame_count / elapsed_time
-                frame_count = 0
-                start_time = datetime.now()
-                
-            # 捕获屏幕
+
+            t0 = time.time()
             try:
                 screenshot = self._capture_screen()
                 if screenshot is None:
+                    time.sleep(0.1)
                     continue
-                    
-                self.recognitions_count += 1
-                
-                # 目标检测
-                results = self._detect_objects(screenshot)
 
-                # 处理检测结果
+                # 写入共享槽给推理线程(GIL 原子,无需 Lock)
+                self._latest_frame = screenshot
+
+                # 统计预览 FPS
+                capture_count += 1
+                elapsed = (datetime.now() - capture_start).total_seconds()
+                if elapsed >= 1:
+                    self.preview_fps = capture_count / elapsed
+                    capture_count = 0
+                    capture_start = datetime.now()
+
+                # emit 预览:叠加推理线程最近一次的检测结果(copy 一份,防下游枚举到一半被覆盖)
+                if self.on_frame_result is not None:
+                    try:
+                        self.on_frame_result(screenshot, list(self._latest_detections))
+                    except Exception as emit_err:
+                        logger.error(f"帧回调出错: {emit_err}")
+
+            except Exception as e:
+                logger.error(f"截图循环出错: {str(e)}")
+                if self.on_error:
+                    self.on_error(e)
+
+            # 节流到 preview_fps_cap,避免无谓的 CPU 占用
+            elapsed = time.time() - t0
+            if elapsed < target_interval:
+                time.sleep(target_interval - elapsed)
+
+    def _inference_loop(self):
+        """推理线程。
+        从 _latest_frame 拿最新一帧跑 YOLO,慢但稳定;推理结果写回 _latest_detections。
+        与截图解耦,推理多慢都不会拖慢预览。
+        """
+        start_time = datetime.now()
+        frame_count = 0
+
+        # 等首帧到达再开始,避免空跑
+        while self.is_running and self._latest_frame is None:
+            time.sleep(0.02)
+
+        while self.is_running:
+            if self.is_paused:
+                time.sleep(0.1)
+                continue
+
+            # 拿最新一帧的引用快照(GIL 保证赋值原子;每次 mss.grab 返回新 ndarray,不存在"读到一半"问题)
+            frame = self._latest_frame
+            if frame is None:
+                time.sleep(0.05)
+                continue
+
+            try:
+                self.recognitions_count += 1
+
+                # 统计推理 FPS(每秒能跑几次 YOLO)
+                frame_count += 1
+                elapsed_time = (datetime.now() - start_time).total_seconds()
+                if elapsed_time >= 1:
+                    self.fps = frame_count / elapsed_time
+                    frame_count = 0
+                    start_time = datetime.now()
+
+                results = self._detect_objects(frame)
+                # 写回检测结果给截图线程当下一次预览的叠加层
+                self._latest_detections = results or []
+
                 if results:
                     self._handle_detection_results(results)
 
-                # 可视化帧回调（限频）
-                if self.on_frame_result is not None:
-                    now = time.time()
-                    if now - self._last_frame_emit_time >= self.frame_emit_interval:
-                        self._last_frame_emit_time = now
-                        try:
-                            self.on_frame_result(screenshot, results or [])
-                        except Exception as emit_err:
-                            logger.error(f"帧回调出错: {emit_err}")
-                    
             except Exception as e:
                 logger.error(f"识别过程出错: {str(e)}")
                 if self.on_error:
                     self.on_error(e)
-                    
-            # 控制识别频率
-            time.sleep(0.05)  # 约20帧/秒
             
     def _capture_screen(self):
         """捕获屏幕截图
@@ -373,12 +438,13 @@ class ScreenRecognition:
             "recognitions_count": self.recognitions_count,
             "clicks_count": self.clicks_count,
             "fps": self.fps,
+            "preview_fps": self.preview_fps,
             "last_click_time": self.last_click_time,
             "confidence_threshold": self.confidence_threshold,
             "click_cooldown": self.click_cooldown,
             "model_path": self.model_path
         }
-        
+
     def set_confidence_threshold(self, threshold):
         """设置置信度阈值
         
@@ -540,6 +606,7 @@ class RecognitionManager:
             "recognitions_count": 0,
             "clicks_count": 0,
             "fps": 0,
+            "preview_fps": 0,
             "last_click_time": None,
             "confidence_threshold": 0.7,
             "click_cooldown": 5,

@@ -53,13 +53,16 @@ def setup_logging():
     log_file = os.path.join(log_dir, "fisherman.log")
     
     # 配置根日志记录器
+    # force=True 是关键:main.py 顶部那次 basicConfig 已经给 root 装了默认 StreamHandler,
+    # 不 force 的话这一次会被忽略,FileHandler 永远不会生效(fisherman.log 永远 0 字节)。
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler(log_file, encoding='utf-8'),
             logging.StreamHandler()
-        ]
+        ],
+        force=True,
     )
     
     return logging.getLogger(__name__)

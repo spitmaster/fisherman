@@ -428,7 +428,8 @@ class RecognitionTestTab(QWidget):
             stats = self.recognition.get_statistics()
             self.stats_label.setText(
                 f"状态: 运行中  |  识别次数: {stats['recognitions_count']}  |  "
-                f"FPS: {stats['fps']:.1f}  |  置信度: {stats['confidence_threshold']:.2f}"
+                f"推理FPS: {stats['fps']:.1f}  |  预览FPS: {stats.get('preview_fps', 0):.1f}  |  "
+                f"置信度: {stats['confidence_threshold']:.2f}"
             )
             self.stats_label.setStyleSheet("color: #2E7D32; font-weight: bold; padding: 4px;")
         else:
