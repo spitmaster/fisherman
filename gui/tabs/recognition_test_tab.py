@@ -32,7 +32,8 @@ class RecognitionTestTab(QWidget):
 
     # 跨线程信号：识别回调在后台线程执行，通过信号切回主线程更新 UI
     detections_received = pyqtSignal(list)
-    frame_received = pyqtSignal(object, list)
+    # 图像处理在截图后台线程完成，仅传已渲染好的 QImage 给主线程
+    frame_ready = pyqtSignal(QImage)
     error_received = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -42,6 +43,9 @@ class RecognitionTestTab(QWidget):
         self.monitor_area = None  # (x, y, width, height)
         self._selector = None
         self._preview_logged = False
+        # 供后台线程读取预览区域尺寸（Python int 赋值 GIL 原子）
+        self._preview_w = 640
+        self._preview_h = 480
         self._init_ui()
         self._connect_signals()
 
@@ -196,7 +200,7 @@ class RecognitionTestTab(QWidget):
     def _connect_signals(self):
         """连接跨线程信号"""
         self.detections_received.connect(self._on_detections_main_thread)
-        self.frame_received.connect(self._on_frame_main_thread)
+        self.frame_ready.connect(self._on_frame_ready_main_thread)
         self.error_received.connect(self._on_error_main_thread)
 
     def _load_models(self):
@@ -398,32 +402,40 @@ class RecognitionTestTab(QWidget):
         self._append_log(f"[错误] {err}")
 
     def _emit_frame(self, frame, detections):
-        """ScreenRecognition 后台线程回调；仅做线程切换，不在此处理图像。"""
-        self.frame_received.emit(frame, list(detections))
-
-    def _on_frame_main_thread(self, frame, detections):
-        """主线程：绘制检测框并更新预览控件"""
-        if frame is None or not self.chk_preview.isChecked():
+        """截图后台线程回调：在此完成所有图像处理，主线程只做 setPixmap。"""
+        if not self.chk_preview.isChecked():
             return
         try:
-            import numpy as np
             import cv2
+            import numpy as np
 
             annotated = draw_detections(frame, detections)
             rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
             rgb = np.ascontiguousarray(rgb)
             height, width = rgb.shape[:2]
-            image = QImage(rgb.data, width, height, rgb.strides[0], QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(image.copy())
-            label_size = self.preview_label.size()
-            self.preview_label.setPixmap(
-                pixmap.scaled(label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            qimg = QImage(rgb.data, width, height, rgb.strides[0], QImage.Format_RGB888)
+            scaled = qimg.scaled(
+                self._preview_w, self._preview_h,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation,
             )
             if not self._preview_logged:
                 logger.info(f"预览首帧到达: {width}x{height}, 检测数 {len(detections)}")
                 self._preview_logged = True
+            self.frame_ready.emit(scaled)
         except Exception as e:
-            logger.error(f"预览渲染出错: {e}", exc_info=True)
+            logger.error(f"帧处理出错: {e}", exc_info=True)
+
+    def _on_frame_ready_main_thread(self, qimg: QImage):
+        """主线程：仅做 QPixmap 转换 + setPixmap，< 1ms。"""
+        self.preview_label.setPixmap(QPixmap.fromImage(qimg))
+
+    def resizeEvent(self, event):
+        """更新供后台线程使用的预览尺寸缓存。"""
+        super().resizeEvent(event)
+        if hasattr(self, "preview_label"):
+            sz = self.preview_label.size()
+            self._preview_w = sz.width()
+            self._preview_h = sz.height()
 
     def _on_preview_toggled(self, checked: bool):
         """切换可视化预览开关：运行中也生效"""

@@ -80,8 +80,8 @@ class ScreenRecognition:
         self.on_click_event = None
         self.on_error = None
 
-        # 预览帧率上限。30 对人眼足够顺滑,再高基本无收益、白吃 CPU
-        self.preview_fps_cap = 30
+        # 预览帧率上限。15 FPS 对人眼足够流畅，减轻主线程渲染压力
+        self.preview_fps_cap = 15
 
         # 截图线程与推理线程之间的共享槽:
         # _latest_frame 由截图线程写、推理 + 预览读;_latest_detections 由推理线程写、预览读。

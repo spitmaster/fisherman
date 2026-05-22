@@ -16,7 +16,12 @@ from PyQt5.QtGui import QCloseEvent
 
 from global_support.task_scheduler import task_scheduler
 from recognition.screen_recognition import recognition_manager
-from gui.tabs import TrainingTab, TrainingResultTab, RecognitionTab, RecognitionTestTab, RecognitionActionTab, SettingsTab
+from gui.tabs import (
+    TrainingTab, TrainingResultTab, RecognitionTab,
+    RecognitionTestTab, RecognitionActionTab,
+    DisplacementTestTab, DisplacementActionTab,
+    SettingsTab,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +92,12 @@ class MainWindow(QMainWindow):
         self.recognition_action_tab = RecognitionActionTab()
         self.tabs.addTab(self.recognition_action_tab, "识别操作")
 
+        self.displacement_test_tab = DisplacementTestTab()
+        self.tabs.addTab(self.displacement_test_tab, "位移测试")
+
+        self.displacement_action_tab = DisplacementActionTab()
+        self.tabs.addTab(self.displacement_action_tab, "位移操作")
+
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "设置")
 
@@ -144,6 +155,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'recognition_action_tab'):
             self.recognition_action_tab._update_stats()
 
+        # 更新位移测试/操作标签页统计
+        if hasattr(self, 'displacement_test_tab'):
+            self.displacement_test_tab._update_stats()
+        if hasattr(self, 'displacement_action_tab'):
+            self.displacement_action_tab._update_stats()
+
     def open_log_viewer(self):
         """打开日志查看窗口"""
         try:
@@ -168,6 +185,12 @@ class MainWindow(QMainWindow):
         # 停止识别操作标签页的识别任务
         if hasattr(self, 'recognition_action_tab'):
             self.recognition_action_tab.close()
+
+        # 停止位移测试/操作标签页
+        if hasattr(self, 'displacement_test_tab'):
+            self.displacement_test_tab.close()
+        if hasattr(self, 'displacement_action_tab'):
+            self.displacement_action_tab.close()
 
         # 停止所有任务（原有的识别管理器）
         if recognition_manager.is_recognition_active():

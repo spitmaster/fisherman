@@ -131,21 +131,56 @@
 - ⏳ 错误处理与重试
 - ⏳ 自定义脚本沙箱
 
-### 2.8 设置标签页(SettingsTab)— ✅ 已完成
+### 2.8 位移测试标签页(DisplacementTestTab)— ⏳ 待实现
 
-- F2.8.1 显示运行环境(Python、PyTorch、CUDA 状态)
-- F2.8.2 显示项目路径、数据库位置
+**作为** 用户,**我希望** 只有当目标明显移动时才被提醒,**以便** 忽略静止目标的干扰。
 
-### 2.9 日志查看器(LogViewerDialog)— ✅ 已完成
+继承识别测试的全部能力,在回调层叠加**位移感知过滤**——只有当追踪目标在时间窗口内中心点移动距离超过阈值时才触发提示。不触发点击。
 
-- F2.9.1 按任务 ID / 级别 / 时间过滤
-- F2.9.2 读取 `training_logs`、`recognition_logs` 表 + `logs/fisherman.log`
+**功能点**:
+- F2.8.1 所有识别参数同 RecognitionTestTab(模型/置信度/设备/ROI 区域)
+- F2.8.2 位移阈值配置(滑块,10–300 px,默认 50 px)
+- F2.8.3 时间窗口配置(滑块,0.5–10.0 s,默认 2.0 s)——与 N 秒前位置比较
+- F2.8.4 触发冷却配置(滑块,0–10 s,默认 1.0 s)
+- F2.8.5 实时预览帧仍显示所有检测框(不限于触发目标)
+- F2.8.6 触发时日志区高亮:目标 class + 位移距离 px + 当前坐标
 
-### 2.10 任务调度(隐式能力)— ✅ 已完成
+**验收标准**:
+- [ ] 目标静止不移动 → 不触发
+- [ ] 历史记录不足 window_seconds → 不触发(目标刚出现)
+- [ ] 中心点移动 > threshold 且历史充足 → 触发
+- [ ] 冷却期内不重复触发
 
-- F2.10.1 训练 + 识别任务统一走 `task_scheduler.submit()`
-- F2.10.2 同一时刻至多一个重任务运行(`max_concurrent_tasks=1`)
-- F2.10.3 用户无感知
+### 2.9 位移操作标签页(DisplacementActionTab)— ⏳ 待实现
+
+继承位移测试的位移感知过滤能力,触发时执行用户自定义 Python 脚本(同 RecognitionActionTab 脚本机制)。
+
+**功能点**:
+- F2.9.1 所有参数同 DisplacementTestTab(模型/置信度/设备/ROI/位移阈值/时间窗口/冷却)
+- F2.9.2 Python 脚本配置区(同 RecognitionActionTab)
+- F2.9.3 脚本内 `detections` 变量只包含触发了位移条件的目标(过滤后列表)
+- F2.9.4 统计:识别帧数、位移触发次数、脚本执行次数、FPS
+
+**验收标准**:
+- [ ] 触发条件与 DisplacementTestTab 完全一致
+- [ ] 脚本在后台线程执行,不阻塞识别循环
+- [ ] 脚本内 `print` 走 `QMetaObject.invokeMethod` 线程安全写日志
+
+### 2.10 设置标签页(SettingsTab)— ✅ 已完成
+
+- F2.10.1 显示运行环境(Python、PyTorch、CUDA 状态)
+- F2.10.2 显示项目路径、数据库位置
+
+### 2.11 日志查看器(LogViewerDialog)— ✅ 已完成
+
+- F2.11.1 按任务 ID / 级别 / 时间过滤
+- F2.11.2 读取 `training_logs`、`recognition_logs` 表 + `logs/fisherman.log`
+
+### 2.12 任务调度(隐式能力)— ✅ 已完成
+
+- F2.12.1 训练 + 识别任务统一走 `task_scheduler.submit()`
+- F2.12.2 同一时刻至多一个重任务运行(`max_concurrent_tasks=1`)
+- F2.12.3 用户无感知
 
 ---
 
@@ -202,11 +237,13 @@
 MainWindow (~160 行,仅做布局 + Tab 挂载)
 ├── 顶部菜单
 ├── QTabWidget
-│   ├── TrainingTab           — 训练集管理
-│   ├── TrainingResultTab     — 模型版本管理
-│   ├── RecognitionTestTab    — 识别测试(不触发点击)
-│   ├── RecognitionActionTab  — 识别操作(触发点击)
-│   └── SettingsTab           — 环境信息
+│   ├── TrainingTab              — 训练集管理
+│   ├── TrainingResultTab        — 模型版本管理
+│   ├── RecognitionTestTab       — 识别测试(不触发点击)
+│   ├── RecognitionActionTab     — 识别操作(触发点击/脚本)
+│   ├── DisplacementTestTab      — 位移测试(目标位移超阈值才提示)
+│   ├── DisplacementActionTab    — 位移操作(位移超阈值才执行脚本)
+│   └── SettingsTab              — 环境信息
 └── 底部状态栏 + "运行日志"按钮 → LogViewerDialog
 ```
 
@@ -284,8 +321,9 @@ MainWindow (~160 行,仅做布局 + Tab 挂载)
 | `gui/` | 主窗口 + Tabs + Dialogs | `gui.main_window.MainWindow` |
 | `training/` | 训练生命周期管理 | `training.training_manager.TrainingManager` |
 | `recognition/` | 屏幕监控与 YOLO 推理 | `recognition.screen_recognition.recognition_manager` |
+| `recognition/` | 位移追踪(纯内存,无 DB) | `recognition.displacement_tracker.DisplacementTracker` |
 | `training_result/` | 训练产物与模型版本 | `training_result.model_manager.ModelManager` |
-| `global_support/` | 数据库 / 任务调度 | `global_support.database.db_manager` + `global_support.task_scheduler.task_scheduler` |
+| `global_support/` | 数据库 / 任务调度 / 设备枚举 | `global_support.database.db_manager` + `global_support.task_scheduler.task_scheduler` + `global_support.device_resolver.get_available_devices` |
 
 ### 5.4 关键设计模式
 
@@ -297,8 +335,41 @@ MainWindow (~160 行,仅做布局 + Tab 挂载)
 | Template Method | `training/core/base_manager.py`(管理器基类) |
 | Observer/Callback | YOLO 训练回调、识别 `on_recognition_result` |
 | Factory | `task.creator.TaskCreator` |
+| Pipeline Filter | `DisplacementTracker` 在识别回调层做位移过滤,与 `ScreenRecognition` 解耦 |
 
-### 5.5 数据模型
+### 5.5 DisplacementTracker 算法
+
+文件:`recognition/displacement_tracker.py`。纯内存对象,不写数据库。
+
+**追踪算法(每帧)**:
+
+1. 遍历当前帧所有检测结果
+2. 对每个检测框,在 **同 class** 的已有轨迹中找中心点欧氏距离最近的轨迹
+3. 若最近轨迹距离 ≤ `match_radius_px`(默认 = `displacement_threshold_px × 2`):匹配成功,更新轨迹历史
+4. 否则:创建新轨迹,写入初始位置;本帧不触发(无历史可比)
+5. 超过 `track_timeout_s`(默认 3 s)未被匹配的轨迹从状态中清除
+
+**位移判定**:
+
+```
+past_center = 轨迹历史中时间戳最接近 (now - window_seconds) 的记录
+if past_center 存在 and distance(current_center, past_center) > displacement_threshold_px:
+    触发
+```
+
+**可配置参数**:
+
+| 参数 | 默认 | 范围 | UI 控件 |
+|---|---|---|---|
+| `displacement_threshold_px` | 50 | 10–300 | 滑块 |
+| `window_seconds` | 2.0 | 0.5–10.0 | 滑块 |
+| `trigger_cooldown_s` | 1.0 | 0–10 | 滑块 |
+| `match_radius_px` | 自动(= threshold × 2) | — | 不暴露 |
+| `track_timeout_s` | 3.0 | — | 不暴露 |
+
+**不变量约束**:禁止引入 `sort`/`deep_sort` 等外部追踪库(不变量 5 uv.lock 锁定);简单质心匹配已满足单目标 / 稀疏多目标场景。
+
+### 5.6 数据模型
 
 **SQLite 数据库**:`fisherman.db`(项目根)。全部主键为 UUID v4(`String(36)`)。
 

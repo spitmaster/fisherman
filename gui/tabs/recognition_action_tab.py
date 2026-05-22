@@ -34,7 +34,6 @@ class RecognitionActionTab(QWidget):
         self.monitor_area = None
         self.selecting_area = False
         self.last_detection_time = None
-        self.detection_cooldown = 1.0  # 检测冷却时间（秒）
         self._init_ui()
 
     def _init_ui(self):
@@ -96,22 +95,42 @@ class RecognitionActionTab(QWidget):
         script_group = QGroupBox("Python脚本配置")
         script_layout = QVBoxLayout(script_group)
 
-        script_layout.addWidget(QLabel("识别到目标后执行的Python代码:"))
+        # 执行冷却滑块（0.0–10.0 s，步长 0.1）
+        cool_layout = QHBoxLayout()
+        cool_layout.addWidget(QLabel("执行冷却:"))
+        self.cooldown_slider = QSlider(Qt.Horizontal)
+        self.cooldown_slider.setMinimum(0)
+        self.cooldown_slider.setMaximum(100)
+        self.cooldown_slider.setValue(10)
+        self.cooldown_slider.valueChanged.connect(
+            lambda v: self.cooldown_label.setText(f"{v / 10:.1f} s")
+        )
+        cool_layout.addWidget(self.cooldown_slider)
+        self.cooldown_label = QLabel("1.0 s")
+        self.cooldown_label.setFixedWidth(60)
+        cool_layout.addWidget(self.cooldown_label)
+        script_layout.addLayout(cool_layout)
+
+        script_layout.addWidget(QLabel("识别到目标后执行的 Python 代码（pyautogui / time 已预置）:"))
         self.script_text = QTextEdit()
         self.script_text.setPlaceholderText(
-            "# 在这里输入Python代码\n"
-            "# 可用变量:\n"
-            "# detections: 检测结果列表\n"
-            "#   - detection['bbox']: (x1, y1, x2, y2)\n"
-            "#   - detection['center']: (center_x, center_y)\n"
-            "#   - detection['confidence']: 置信度\n"
-            "#   - detection['class_name']: 类别名称\n"
+            "# 可用变量 / 模块:\n"
+            "#   detections  — 本次检测结果列表\n"
+            "#     .bbox       (x1, y1, x2, y2)\n"
+            "#     .center     (cx, cy)  屏幕绝对坐标\n"
+            "#     .confidence 置信度 float\n"
+            "#     .class_name 类别名称\n"
+            "#   pyautogui   — 鼠标/键盘控制\n"
+            "#   time        — 时间工具\n"
             "\n"
-            "# 示例: 打印检测结果\n"
-            "for det in detections:\n"
-            "    print(f\"检测到: {det['class_name']} at {det['center']}\")"
+            "# 示例：点击置信度最高的目标\n"
+            "if detections:\n"
+            "    best = max(detections, key=lambda d: d['confidence'])\n"
+            "    cx, cy = best['center']\n"
+            "    pyautogui.click(cx, cy)\n"
+            "    print(f\"点击 {best['class_name']} @ ({cx}, {cy})\")"
         )
-        self.script_text.setMaximumHeight(150)
+        self.script_text.setMaximumHeight(180)
         script_layout.addWidget(self.script_text)
 
         layout.addWidget(script_group)
@@ -199,11 +218,11 @@ class RecognitionActionTab(QWidget):
             confidence_threshold = self.conf_slider.value() / 100.0
             device = self.device_combo.currentData() or "cpu"
 
-            # 创建识别实例
+            # 识别操作 Tab 只执行用户脚本，不做自动点击
             self.recognition = ScreenRecognition(
                 model_path=model_path,
                 confidence_threshold=confidence_threshold,
-                click_cooldown=0,
+                click_enabled=False,
                 device=device,
             )
 
@@ -268,9 +287,10 @@ class RecognitionActionTab(QWidget):
         if not detections:
             return
 
-        # 检查冷却时间
+        # 检查执行冷却
         current_time = time.time()
-        if self.last_detection_time and (current_time - self.last_detection_time) < self.detection_cooldown:
+        cooldown = self.cooldown_slider.value() / 10.0
+        if self.last_detection_time and (current_time - self.last_detection_time) < cooldown:
             return
 
         self.last_detection_time = current_time
@@ -297,14 +317,15 @@ class RecognitionActionTab(QWidget):
     def _execute_script(self, detections, script_code):
         """执行用户Python脚本"""
         try:
-            # 准备执行环境
+            import pyautogui as _pyautogui
+            import time as _time
             execution_globals = {
                 '__name__': '__main__',
                 'detections': detections,
                 'print': self._safe_print,
+                'pyautogui': _pyautogui,
+                'time': _time,
             }
-
-            # 执行脚本
             exec(script_code, execution_globals)
 
             self.script_executions += 1

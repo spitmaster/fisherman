@@ -9,6 +9,8 @@ from .training_result_tab import TrainingResultTab
 from .recognition_tab import RecognitionTab
 from .recognition_test_tab import RecognitionTestTab
 from .recognition_action_tab import RecognitionActionTab
+from .displacement_test_tab import DisplacementTestTab
+from .displacement_action_tab import DisplacementActionTab
 from .settings_tab import SettingsTab
 
 __all__ = [
@@ -17,5 +19,7 @@ __all__ = [
     'RecognitionTab',
     'RecognitionTestTab',
     'RecognitionActionTab',
-    'SettingsTab'
+    'DisplacementTestTab',
+    'DisplacementActionTab',
+    'SettingsTab',
 ]
