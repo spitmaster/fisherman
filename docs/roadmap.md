@@ -42,10 +42,11 @@
 
 ## P1 — 能力扩展
 
-### P1-1 GPU 训练支持
-- `device` 参数可配(cpu / cuda:0)
-- ⚠️ 触碰架构不变量 5(CPU 推理),先评估 PyInstaller 打包影响
-- 责任 agent:[yolo-training-engineer](./agents/yolo-training-engineer.md) + orchestrator 评估
+### P1-1 多设备支持(训练 + 推理)✅ 架构骨架已落地(2026-05-22)
+- `global_support/device_resolver.py`:枚举 CPU / CUDA 设备,全局缓存
+- 训练参数面板加"计算设备"下拉;识别测试/操作页各加"计算设备"下拉
+- `config_builder` / `screen_recognition` 全链路透传 `device` 参数
+- ⚠️ PyInstaller 打包含 CUDA 依赖的影响**尚未评估**,打包前需补充
 
 ### P1-2 自定义点击脚本沙箱
 - 用户脚本超时 / import 限制 / 异常捕获
@@ -116,5 +117,6 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-05-22 | P1-1 多设备支持骨架 ✅(架构落地,打包评估待补);SPEC 不变量 6 更新 |
 | 2026-05-19 | SDD 体系建立 ✅(M1 完结);P0-1 多目标识别策略启动(M2)。"进行中"区从 SDD 切换为 P0-1 |
 | 2026-05-19 | 初版。从 `olddocs/原始设计文档/09_roadmap.md` 吸收,按 SDD 三档规划分级到 P0/P1/P2 |
