@@ -21,6 +21,7 @@ dependencies = [
     "pandas>=2.0.0",
     "scipy>=1.10.0",
     "psutil>=6.0.0",
+    "keyboard>=0.13.5",
 ]
 
 [tool.uv]

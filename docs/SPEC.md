@@ -182,6 +182,35 @@
 - F2.12.2 同一时刻至多一个重任务运行(`max_concurrent_tasks=1`)
 - F2.12.3 用户无感知
 
+### 2.13 图库标签页(ImageLibraryTab)— ✅ 已完成
+
+**作为** 用户,**我希望** 在玩游戏的同时快速采集截图并管理图片库,**以便** 积累训练数据后一键导入训练集,无需手动整理文件。
+
+**功能点**:
+
+- F2.13.1 缩略图网格浏览(含文件名 + 来源标记 `截图` / `导入` + 采集时间)
+- F2.13.2 文件导入(单张或多张 `.jpg`/`.png`/`.bmp` 文件,复制不移动)
+- F2.13.3 文件夹批量导入(递归扫描文件夹内所有图片,复制不移动)
+- F2.13.4 全局快捷键截图(可配置按键,默认 `F9`;应用在后台时亦可触发;截图以时间戳命名存入 `image_library/` 目录)
+- F2.13.5 删除图库条目(二次确认;仅删库记录 + 磁盘文件,不影响已导入训练集的副本)
+- F2.13.6 选中导入到训练集(多选图片 → 选择目标训练任务 → 复制到该任务 `dataset/images/`,数量计入训练集)
+- F2.13.7 图库统计(总图片数、今日截图数)
+
+**全局快捷键设计约束**:
+
+- 热键监听在独立守护线程运行,应用关闭时随主进程退出
+- 截图使用已有 `mss` 依赖,捕获全屏
+- 热键依赖库:`keyboard==0.13.5`(已引入)
+- 热键冲突(与 WoW 按键重叠)由用户自行配置回避
+
+**验收标准**:
+
+- [ ] WoW 全屏运行时按快捷键能截图并存入图库(应用在后台)
+- [ ] 截图文件名不碰撞(时间戳 + 随机后缀)
+- [ ] 导入到训练集后,训练集图片数量正确更新
+- [ ] 缩略图网格支持 500 张不明显卡顿
+- [ ] 快捷键配置持久化(写入 Settings 或独立配置文件)
+
 ---
 
 ## 3. 非功能需求
@@ -239,6 +268,7 @@ MainWindow (~160 行,仅做布局 + Tab 挂载)
 ├── QTabWidget
 │   ├── TrainingTab              — 训练集管理
 │   ├── TrainingResultTab        — 模型版本管理
+│   ├── ImageLibraryTab          — 图库(截图采集 + 导入训练集)⏳
 │   ├── RecognitionTestTab       — 识别测试(不触发点击)
 │   ├── RecognitionActionTab     — 识别操作(触发点击/脚本)
 │   ├── DisplacementTestTab      — 位移测试(目标位移超阈值才提示)
@@ -323,6 +353,7 @@ MainWindow (~160 行,仅做布局 + Tab 挂载)
 | `recognition/` | 屏幕监控与 YOLO 推理 | `recognition.screen_recognition.recognition_manager` |
 | `recognition/` | 位移追踪(纯内存,无 DB) | `recognition.displacement_tracker.DisplacementTracker` |
 | `training_result/` | 训练产物与模型版本 | `training_result.model_manager.ModelManager` |
+| `image_library/` | 图库管理(截图存储 + 导入训练集) | `image_library.library_manager.LibraryManager` |
 | `global_support/` | 数据库 / 任务调度 / 设备枚举 | `global_support.database.db_manager` + `global_support.task_scheduler.task_scheduler` + `global_support.device_resolver.get_available_devices` |
 
 ### 5.4 关键设计模式
@@ -381,6 +412,7 @@ if past_center 存在 and distance(current_center, past_center) > displacement_t
 | `recognition_logs` | 识别日志 | id, recognition_task_id (FK), log_level, log_message |
 | `recognition_details` | 识别详情 | id, recognition_task_id (FK), timestamp, target_x/y, confidence, target_class |
 | `model_versions` | 模型版本 | id, training_task_id (FK), model_path, version, is_default, file_size |
+| `image_library` | 图库条目 | id, file_path, source(`screenshot`/`import`), created_at |
 
 **关系图**:
 ```
@@ -593,4 +625,6 @@ MainWindow.closeEvent:
 
 | 日期 | 版本 | 改动 |
 |------|------|------|
+| 2026-05-22 | v1.2 | M3 图库功能:新增 §2.13 ImageLibraryTab 规格、§4.1 Tab 结构更新、§5.3 模块清单补充、§5.6 image_library 表 |
+| 2026-05-22 | v1.1 | M2-前置2 位移感知:新增 §2.8 DisplacementTestTab、§2.9 DisplacementActionTab、§5.5 DisplacementTracker 算法 |
 | 2026-05-19 | v1.0 | 初版。由 olddocs/原始设计文档/ 10 份文档 + 实际代码扫描合并产出 |

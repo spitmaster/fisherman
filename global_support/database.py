@@ -101,6 +101,16 @@ class ModelVersion(Base):
 
     training_task = relationship("TrainingTask")
 
+
+class ImageLibrary(Base):
+    __tablename__ = 'image_library'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    file_path = Column(String(500), nullable=False)
+    source = Column(String(20), default='import')  # 'screenshot' | 'import'
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class DatabaseManager:
     _instance = None
     

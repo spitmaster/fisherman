@@ -121,3 +121,6 @@ dist/
 
 fisherman_env/
 .venv/
+
+# 图库截图存储目录（运行期产生）
+image_library_files/

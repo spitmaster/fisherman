@@ -38,14 +38,29 @@ def check_and_migrate_database():
             logging.info("添加batch_size列")
             cursor.execute("ALTER TABLE training_tasks ADD COLUMN batch_size INTEGER DEFAULT 16")
             
+        # 确保 image_library 表存在（M3 新增）
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='image_library'")
+        if not cursor.fetchone():
+            logging.info("创建 image_library 表")
+            cursor.execute("""
+                CREATE TABLE image_library (
+                    id TEXT PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    source TEXT DEFAULT 'import',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_source ON image_library(source)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_created ON image_library(created_at)")
+
         # 提交更改
         conn.commit()
-        
+
         # 再次检查表结构
         cursor.execute("PRAGMA table_info(training_tasks)")
         new_columns = [column[1] for column in cursor.fetchall()]
         logging.info(f"更新后的training_tasks表列: {new_columns}")
-        
+
         conn.close()
         
         logging.info("数据库迁移成功")
