@@ -72,5 +72,6 @@ names:
             "project": str(weights_dir),
             "name": train_name,
             "exist_ok": True,
-            "verbose": verbose
+            "verbose": verbose,
+            "device": training_params.get("device", "cpu"),
         }

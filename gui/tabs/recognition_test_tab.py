@@ -22,6 +22,7 @@ from training_result.model_manager import model_manager
 from recognition.screen_recognition import ScreenRecognition
 from recognition.visualizer import draw_detections
 from gui.screen_area_selector import ScreenAreaSelector
+from global_support.device_resolver import get_available_devices, device_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,16 @@ class RecognitionTestTab(QWidget):
         self.conf_label.setFixedWidth(50)
         conf_layout.addWidget(self.conf_label)
         params_layout.addLayout(conf_layout)
+
+        # 计算设备选择
+        device_layout = QHBoxLayout()
+        device_layout.addWidget(QLabel("计算设备:"))
+        self.device_combo = QComboBox()
+        self.device_combo.setMinimumWidth(260)
+        self._populate_device_combo(self.device_combo)
+        device_layout.addWidget(self.device_combo)
+        device_layout.addStretch()
+        params_layout.addLayout(device_layout)
 
         # 识别区域选择
         area_layout = QHBoxLayout()
@@ -176,6 +187,12 @@ class RecognitionTestTab(QWidget):
         self._load_models()
         self._update_start_button_state()
 
+    def _populate_device_combo(self, combo: "QComboBox"):
+        """填充设备下拉框。"""
+        combo.clear()
+        for info in get_available_devices():
+            combo.addItem(device_display_name(info), info.spec)
+
     def _connect_signals(self):
         """连接跨线程信号"""
         self.detections_received.connect(self._on_detections_main_thread)
@@ -263,12 +280,14 @@ class RecognitionTestTab(QWidget):
 
             model_path = self.model_combo.itemData(model_index)
             confidence_threshold = self.conf_slider.value() / 100.0
+            device = self.device_combo.currentData() or "cpu"
 
             # 创建识别实例（测试模式：禁用点击）
             self.recognition = ScreenRecognition(
                 model_path=model_path,
                 confidence_threshold=confidence_threshold,
                 click_enabled=False,
+                device=device,
             )
 
             if self.recognition.model is None:
@@ -296,11 +315,13 @@ class RecognitionTestTab(QWidget):
                 self.btn_select_area.setEnabled(True)  # 区域运行时也可改
                 self.btn_reset_area.setEnabled(True)
                 self.model_combo.setEnabled(False)
+                self.device_combo.setEnabled(False)
 
                 self.result_text.clear()
                 self._append_log(f"识别测试已启动")
                 self._append_log(f"模型: {model_path}")
                 self._append_log(f"置信度阈值: {confidence_threshold:.2f}")
+                self._append_log(f"计算设备: {device}")
                 self._append_log(f"识别区域: {self.area_label.text()}")
                 self._append_log("-" * 80)
             else:
@@ -328,6 +349,7 @@ class RecognitionTestTab(QWidget):
             self.btn_select_area.setEnabled(True)
             self.btn_reset_area.setEnabled(True)
             self.model_combo.setEnabled(True)
+            self.device_combo.setEnabled(True)
 
             self._append_log("")
             self._append_log("识别测试已停止")

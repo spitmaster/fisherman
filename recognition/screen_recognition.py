@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class ScreenRecognition:
     """屏幕识别类"""
     
-    def __init__(self, model_path, confidence_threshold=0.7, click_cooldown=5, click_enabled=True):
+    def __init__(self, model_path, confidence_threshold=0.7, click_cooldown=5, click_enabled=True, device="cpu"):
         """初始化屏幕识别
 
         Args:
@@ -40,19 +40,18 @@ class ScreenRecognition:
             confidence_threshold: 置信度阈值（0-1）
             click_cooldown: 点击冷却时间（秒）
             click_enabled: 是否启用自动点击（测试模式下设为 False）
+            device: 推理设备，如 "cpu" / "cuda:0"
         """
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.click_cooldown = click_cooldown
         self.click_enabled = click_enabled
-        
+        self.device = device
+
         # 加载YOLO模型
         try:
             self.model = YOLO(model_path)
-            # 强制使用CPU
-            import torch
-            self.model.to(torch.device("cpu"))
-            logger.info(f"YOLO模型加载成功: {model_path} (使用CPU)")
+            logger.info(f"YOLO模型加载成功: {model_path} (设备: {device})")
         except Exception as e:
             logger.error(f"YOLO模型加载失败: {str(e)}")
             self.model = None
@@ -324,7 +323,7 @@ class ScreenRecognition:
                 source=image,
                 conf=self.confidence_threshold,
                 verbose=False,
-                device="cpu"  # 强制使用CPU进行推理
+                device=self.device,
             )
             
             detections = []

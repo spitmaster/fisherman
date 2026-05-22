@@ -9,6 +9,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QFormLayout, QSpinBox, QComboBox
 )
+from global_support.device_resolver import get_available_devices, device_display_name
 
 
 class TrainingParamsWidget(QWidget):
@@ -47,10 +48,15 @@ class TrainingParamsWidget(QWidget):
         ])
         self.combo_model_type.setCurrentIndex(0)
 
+        self.combo_device = QComboBox()
+        for info in get_available_devices():
+            self.combo_device.addItem(device_display_name(info), info.spec)
+
         layout.addRow("轮数:", self.spin_epochs)
         layout.addRow("批次:", self.spin_batch_size)
         layout.addRow("尺寸:", self.spin_img_size)
         layout.addRow("模型类型:", self.combo_model_type)
+        layout.addRow("计算设备:", self.combo_device)
 
     def get_training_params(self) -> dict:
         """获取训练参数
@@ -63,7 +69,8 @@ class TrainingParamsWidget(QWidget):
             "epochs": self.spin_epochs.value(),
             "batch_size": self.spin_batch_size.value(),
             "image_size": self.spin_img_size.value(),
-            "model_type": model_type
+            "model_type": model_type,
+            "device": self.combo_device.currentData() or "cpu",
         }
 
     def set_enabled(self, enabled: bool):
@@ -76,3 +83,4 @@ class TrainingParamsWidget(QWidget):
         self.spin_batch_size.setEnabled(enabled)
         self.spin_img_size.setEnabled(enabled)
         self.combo_model_type.setEnabled(enabled)
+        self.combo_device.setEnabled(enabled)

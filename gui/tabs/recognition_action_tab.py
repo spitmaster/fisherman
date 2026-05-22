@@ -19,6 +19,7 @@ from PyQt5.QtCore import QTimer, Qt
 
 from training_result.model_manager import model_manager
 from recognition.screen_recognition import ScreenRecognition
+from global_support.device_resolver import get_available_devices, device_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,17 @@ class RecognitionActionTab(QWidget):
         self.conf_label.setFixedWidth(50)
         conf_layout.addWidget(self.conf_label)
         params_layout.addLayout(conf_layout)
+
+        # 计算设备选择
+        device_layout = QHBoxLayout()
+        device_layout.addWidget(QLabel("计算设备:"))
+        self.device_combo = QComboBox()
+        self.device_combo.setMinimumWidth(260)
+        for info in get_available_devices():
+            self.device_combo.addItem(device_display_name(info), info.spec)
+        device_layout.addWidget(self.device_combo)
+        device_layout.addStretch()
+        params_layout.addLayout(device_layout)
 
         # 识别区域选择
         area_layout = QHBoxLayout()
@@ -185,12 +197,14 @@ class RecognitionActionTab(QWidget):
 
             model_path = self.model_combo.itemData(model_index)
             confidence_threshold = self.conf_slider.value() / 100.0
+            device = self.device_combo.currentData() or "cpu"
 
             # 创建识别实例
             self.recognition = ScreenRecognition(
                 model_path=model_path,
                 confidence_threshold=confidence_threshold,
-                click_cooldown=0  # 不需要自动点击
+                click_cooldown=0,
+                device=device,
             )
 
             # 设置监控区域
@@ -209,12 +223,14 @@ class RecognitionActionTab(QWidget):
                 self.btn_stop.setEnabled(True)
                 self.btn_select_area.setEnabled(False)
                 self.model_combo.setEnabled(False)
+                self.device_combo.setEnabled(False)
                 self.script_text.setEnabled(False)
                 self.log_text.clear()
                 self.script_executions = 0
                 self.log_text.append(f"[{datetime.now().strftime('%H:%M:%S')}] 识别已启动")
                 self.log_text.append(f"模型: {model_path}")
                 self.log_text.append(f"置信度阈值: {confidence_threshold:.2f}")
+                self.log_text.append(f"计算设备: {device}")
                 self.log_text.append(f"识别区域: {self.area_label.text()}")
                 self.log_text.append("-" * 80)
             else:
@@ -237,6 +253,7 @@ class RecognitionActionTab(QWidget):
             self.btn_stop.setEnabled(False)
             self.btn_select_area.setEnabled(True)
             self.model_combo.setEnabled(True)
+            self.device_combo.setEnabled(True)
             self.script_text.setEnabled(True)
 
             self.log_text.append(f"\n[{datetime.now().strftime('%H:%M:%S')}] 识别已停止")

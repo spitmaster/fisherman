@@ -509,7 +509,7 @@ class YOLOTrainer(BaseManager):
             "patience": 50,       # 早停耐心值
             "lr0": 0.01,          # 初始学习率
             "lrf": 0.01,          # 最终学习率因子
-            "device": "cpu",      # 训练设备
+            "device": "cpu",      # 默认 CPU；由调用方通过 training_config 覆盖
             "workers": 1,         # 工作线程数
             "optimizer": "auto",  # 优化器
             "weight_decay": 0.0005, # 权重衰减

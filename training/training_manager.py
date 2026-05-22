@@ -582,7 +582,7 @@ class TrainingManager:
                 "name": "yolo_training",
                 "exist_ok": True,
                 "verbose": True,
-                "device": "cpu",
+                "device": getattr(scheduler_task, "device", "cpu"),
                 "workers": 1,
                 "patience": min(50, scheduler_task.epochs // 3),
                 "lr0": 0.01,

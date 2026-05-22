@@ -492,7 +492,7 @@ MainWindow.closeEvent:
 3. **【MUST】重资源串行**:训练/识别任务必须经 `task_scheduler.submit()`,不绕过调度器
 4. **【MUST】UUID 主键**:所有数据库主键 + 训练集目录名一律 UUID v4,禁止用名称
 5. **【MUST】依赖锁定**:`uv.lock` 必须纳入版本控制,保证团队构建一致
-6. **【MUST】CPU 推理**:目前为 CPU only,引入 GPU 支持需评估打包影响(参见 §6.2)
+6. **【MUST】设备选择显式化**:训练/推理使用的硬件设备必须由用户在任务发起时显式选择;系统**不自动降级**,设备不可用时报错提示用户;设备枚举走 `global_support/device_resolver.get_available_devices()`
 7. **【SHOULD】logging 优先**:新代码禁止 `print`,统一走 logging 体系
 
 ---
