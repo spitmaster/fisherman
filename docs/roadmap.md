@@ -14,69 +14,33 @@
 
 ## 进行中
 
-### P0-1 recognition 多目标识别策略与健壮性(⏳ 2026-05-19 启动)
+### M3 训练图库(⏳ 2026-05-22 启动)
 
-详见 [milestones/20260204.md M2 段](./milestones/20260204.md#m2--recognition-多目标识别策略与健壮性-)。
+详见 [milestones/20260204.md M3 段](./milestones/20260204.md#m3--训练图库-)。
 
-- 多目标策略:Top-N / 轮询 / 几何过滤(Strategy 模式)
-- 错误处理与重试机制
-- FPS / 延迟性能调优
-- 责任 agent:[screen-recognition-engineer](./agents/screen-recognition-engineer.md)
+**背景**:边玩 WoW 边采集浮漂训练图片，积累图库后一键导入训练集，打通"边玩边采集"流程。
 
----
-
-## P0 — 体验完成度(下一批次)
-
-### P0-2 training_result 模型对比视图
-- mAP / loss 曲线对比(同一图表内多个模型)
-- 模型导入/导出流程闭环
-- 模型版本切换的数据库一致性
-- 责任 agent:[pyqt5-ui-developer](./agents/pyqt5-ui-developer.md) + [sqlalchemy-db-engineer](./agents/sqlalchemy-db-engineer.md)
-
-### P0-3 标注器快捷键 + 批量操作
-- 快捷键:空格保存、WASD 切换图片、撤销
-- 批量校验进度展示
-- 责任 agent:[annotation-tool-engineer](./agents/annotation-tool-engineer.md) + [pyqt5-ui-developer](./agents/pyqt5-ui-developer.md)
+- 图库 Tab：缩略图浏览 / 文件 & 文件夹批量导入
+- 全局快捷键截图（游戏全屏时后台捕获，存入图库）
+- 一键导入到指定训练集
 
 ---
 
-## P1 — 能力扩展
+## 后续规划
 
-### P1-1 多设备支持(训练 + 推理)✅ 架构骨架已落地(2026-05-22)
-- `global_support/device_resolver.py`:枚举 CPU / CUDA 设备,全局缓存
-- 训练参数面板加"计算设备"下拉;识别测试/操作页各加"计算设备"下拉
-- `config_builder` / `screen_recognition` 全链路透传 `device` 参数
-- ⚠️ PyInstaller 打包含 CUDA 依赖的影响**尚未评估**,打包前需补充
+### M4 位移测试 Tab 完善
 
-### P1-2 自定义点击脚本沙箱
-- 用户脚本超时 / import 限制 / 异常捕获
-- 责任 agent:[screen-recognition-engineer](./agents/screen-recognition-engineer.md)
+**背景**:为钓鱼场景调优位移参数，需要更直观的可视化。
 
-### P1-3 多模型切换与热加载
-- 运行时切换模型不重启识别
-- 模型缓存策略
-- 责任 agent:[yolo-training-engineer](./agents/yolo-training-engineer.md) + [sqlalchemy-db-engineer](./agents/sqlalchemy-db-engineer.md)
+- 位移轨迹可视化（Y 轴曲线，直观判断浮漂跳动时机）
+- 参数调优实时反馈（阈值 / 窗口调整效果即时可见）
 
-### P1-4 pytest 测试套件
-- 当前只有 simple_test.py / test_modular_structure.py 等冒烟脚本
-- 建立 ORM / 调度器 / 校验规则的单元测试
-- 责任 agent:fixture-validator(脚手架自带通用 agent)
+### M5 自动钓鱼
 
----
+**背景**:识别浮漂 + 检测下沉位移 + 自动点击，实现 WoW 无人钓鱼。
 
-## P2 — 高级特性
-
-### P2-1 分布式训练
-- 暂不规划,等用户量级到达再评估
-
-### P2-2 多模型协同识别(投票)
-- 同一帧多模型推理 + 结果融合
-
-### P2-3 云端模型同步 / 版本仓库
-
-### P2-4 PyInstaller 一键打包分发
-- ⚠️ 红线:仅在用户明确要求时启动
-- 责任:暂由 orchestrator 协调,后续可引入 packaging-engineer
+- 位移操作 Tab 钓鱼脚本模板（点击浮漂 + 重抛逻辑）
+- E2E 游戏内验证
 
 ---
 
@@ -117,6 +81,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-05-22 | 重新规划路线：M3 训练图库 → M4 位移测试完善 → M5 自动钓鱼，旧 P0/P1/P2 计划清除 |
 | 2026-05-22 | P1-1 多设备支持骨架 ✅(架构落地,打包评估待补);SPEC 不变量 6 更新 |
 | 2026-05-19 | SDD 体系建立 ✅(M1 完结);P0-1 多目标识别策略启动(M2)。"进行中"区从 SDD 切换为 P0-1 |
 | 2026-05-19 | 初版。从 `olddocs/原始设计文档/09_roadmap.md` 吸收,按 SDD 三档规划分级到 P0/P1/P2 |

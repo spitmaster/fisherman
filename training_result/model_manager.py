@@ -14,6 +14,7 @@
 
 import os
 import sys
+import glob
 import logging
 import shutil
 import hashlib
@@ -26,15 +27,23 @@ from global_support.database import db_manager, ModelVersion, TrainingTask
 # 日志配置
 logger = logging.getLogger(__name__)
 
+# 项目根目录:model_manager.py 位于 training_result/ 下,上一级即根
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 项目根的内置预训练权重命名约定:yolov8n.pt / yolov8s.pt / yolo11n.pt / ...
+# 用 glob 扫,符合 Ultralytics 命名规则的都收
+_BUILTIN_MODEL_GLOBS = ("yolov[0-9]*.pt", "yolo1[0-9]*.pt")
+
+
 class ModelManager:
     """模型管理器"""
-    
+
     def __init__(self):
         """初始化模型管理器"""
         # 模型存储目录
         self.models_dir = "models"
         os.makedirs(self.models_dir, exist_ok=True)
-        
+
         # 加载已有的模型信息
         self.load_models()
         
@@ -109,6 +118,28 @@ class ModelManager:
                             model_info["task_description"] = "用户手动导入的模型"
                             model_info["dataset_name"] = "手动导入"
                             self.models.append(model_info)
+
+        # 扫项目根的内置预训练权重(yolov8n.pt / yolo11n.pt 等),让用户在识别测试页直接选用
+        builtin_paths = []
+        for pattern in _BUILTIN_MODEL_GLOBS:
+            builtin_paths.extend(glob.glob(os.path.join(_PROJECT_ROOT, pattern)))
+        for model_path in builtin_paths:
+            already_loaded = any(
+                os.path.abspath(m["path"]) == os.path.abspath(model_path) for m in self.models
+            )
+            if already_loaded:
+                continue
+            model_info = self._get_model_info(model_path)
+            if not model_info:
+                continue
+            model_info["version"] = "builtin"
+            model_info["is_default"] = False
+            model_info["created_time"] = datetime.fromtimestamp(os.path.getctime(model_path))
+            model_info["training_task_id"] = None
+            model_info["task_name"] = "内置预训练"
+            model_info["task_description"] = "Ultralytics 官方 COCO 预训练权重(80 类)"
+            model_info["dataset_name"] = "内置预训练 (COCO 80类)"
+            self.models.append(model_info)
 
         logger.info(f"成功加载 {len(self.models)} 个模型文件")
 
