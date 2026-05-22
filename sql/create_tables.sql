@@ -78,12 +78,21 @@ CREATE TABLE IF NOT EXISTS model_versions (
     FOREIGN KEY (training_task_id) REFERENCES training_tasks(id)
 );
 
+-- 图集表(图库分组)
+CREATE TABLE IF NOT EXISTS image_library_albums (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 图库表
 CREATE TABLE IF NOT EXISTS image_library (
     id TEXT PRIMARY KEY,
+    album_id TEXT, -- 可空,空 = 归入默认图集(由业务层兜底)
     file_path TEXT NOT NULL,
     source TEXT DEFAULT 'import', -- screenshot/import
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (album_id) REFERENCES image_library_albums(id)
 );
 
 -- 创建索引以提高查询性能
@@ -97,6 +106,8 @@ CREATE INDEX IF NOT EXISTS idx_model_version_task ON model_versions(training_tas
 CREATE INDEX IF NOT EXISTS idx_model_version_default ON model_versions(is_default);
 CREATE INDEX IF NOT EXISTS idx_image_library_source ON image_library(source);
 CREATE INDEX IF NOT EXISTS idx_image_library_created ON image_library(created_at);
+CREATE INDEX IF NOT EXISTS idx_image_library_album ON image_library(album_id);
+CREATE INDEX IF NOT EXISTS idx_image_library_albums_name ON image_library_albums(name);
 
 -- 初始化数据（可选）
 -- INSERT INTO training_tasks (task_name, task_description, status) VALUES ('示例任务', '这是一个示例训练任务', 'pending');

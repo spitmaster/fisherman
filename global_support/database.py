@@ -102,13 +102,26 @@ class ModelVersion(Base):
     training_task = relationship("TrainingTask")
 
 
+class ImageLibraryAlbum(Base):
+    __tablename__ = 'image_library_albums'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), nullable=False, unique=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    images = relationship("ImageLibrary", back_populates="album")
+
+
 class ImageLibrary(Base):
     __tablename__ = 'image_library'
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    album_id = Column(String(36), ForeignKey('image_library_albums.id'), nullable=True)
     file_path = Column(String(500), nullable=False)
     source = Column(String(20), default='import')  # 'screenshot' | 'import'
     created_at = Column(DateTime, default=datetime.now)
+
+    album = relationship("ImageLibraryAlbum", back_populates="images")
 
 
 class DatabaseManager:

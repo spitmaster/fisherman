@@ -74,15 +74,15 @@ class MainWindow(QMainWindow):
         # 创建标签页组件
         self.tabs = QTabWidget()
 
-        # 创建各个标签页
+        # 创建各个标签页(图库置首,便于先采集/管理素材)
+        self.image_library_tab = ImageLibraryTab()
+        self.tabs.addTab(self.image_library_tab, "图库")
+
         self.training_tab = TrainingTab()
         self.tabs.addTab(self.training_tab, "训练")
 
         self.training_result_tab = TrainingResultTab()
         self.tabs.addTab(self.training_result_tab, "训练结果")
-
-        self.image_library_tab = ImageLibraryTab()
-        self.tabs.addTab(self.image_library_tab, "图库")
 
         # 识别标签页 - 保留原有的识别标签页（或可替换为新的两个标签页）
         # self.recognition_tab = RecognitionTab()

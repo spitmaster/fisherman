@@ -45,13 +45,37 @@ def check_and_migrate_database():
             cursor.execute("""
                 CREATE TABLE image_library (
                     id TEXT PRIMARY KEY,
+                    album_id TEXT,
                     file_path TEXT NOT NULL,
                     source TEXT DEFAULT 'import',
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (album_id) REFERENCES image_library_albums(id)
                 )
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_source ON image_library(source)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_created ON image_library(created_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_album ON image_library(album_id)")
+
+        # 确保 image_library_albums 表存在（M3 图集重构）
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='image_library_albums'")
+        if not cursor.fetchone():
+            logging.info("创建 image_library_albums 表")
+            cursor.execute("""
+                CREATE TABLE image_library_albums (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_albums_name ON image_library_albums(name)")
+
+        # 为既有 image_library 表补 album_id 列(M3 图集重构)
+        cursor.execute("PRAGMA table_info(image_library)")
+        image_library_columns = [c[1] for c in cursor.fetchall()]
+        if "album_id" not in image_library_columns:
+            logging.info("为 image_library 添加 album_id 列")
+            cursor.execute("ALTER TABLE image_library ADD COLUMN album_id TEXT")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_library_album ON image_library(album_id)")
 
         # 提交更改
         conn.commit()

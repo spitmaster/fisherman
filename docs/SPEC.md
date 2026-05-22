@@ -184,32 +184,54 @@
 
 ### 2.13 图库标签页(ImageLibraryTab)— ✅ 已完成
 
-**作为** 用户,**我希望** 在玩游戏的同时快速采集截图并管理图片库,**以便** 积累训练数据后一键导入训练集,无需手动整理文件。
+**作为** 用户,**我希望** 在玩游戏的同时快速采集截图并按「图集」分组管理图片库,**以便** 把不同场景(浮漂-白天 / 浮漂-夜晚)的素材独立组织,再分别导入对应训练集。
+
+**布局**:左右两栏。
+
+```text
+[新建图集]
+┌──────────┬──────────────────────────────┐
+│ 默认图集  │  [导入图片] [导入文件夹]        │
+│ 浮漂-白天 │  ┌───┐ ┌───┐ ┌───┐          │
+│ 浮漂-夜晚 │  │   │ │   │ │   │ ...      │
+│          │  └───┘ └───┘ └───┘          │
+│          │  [全选] [删除选中] [导入训练集] │
+└──────────┴──────────────────────────────┘
+截图热键: F9 → 当前图集: 默认图集
+```
 
 **功能点**:
 
-- F2.13.1 缩略图网格浏览(含文件名 + 来源标记 `截图` / `导入` + 采集时间)
-- F2.13.2 文件导入(单张或多张 `.jpg`/`.png`/`.bmp` 文件,复制不移动)
-- F2.13.3 文件夹批量导入(递归扫描文件夹内所有图片,复制不移动)
-- F2.13.4 全局快捷键截图(可配置按键,默认 `F9`;应用在后台时亦可触发;截图以时间戳命名存入 `image_library/` 目录)
-- F2.13.5 删除图库条目(二次确认;仅删库记录 + 磁盘文件,不影响已导入训练集的副本)
-- F2.13.6 选中导入到训练集(多选图片 → 选择目标训练任务 → 复制到该任务 `dataset/images/`,数量计入训练集)
-- F2.13.7 图库统计(总图片数、今日截图数)
+- F2.13.1 **图集列表(左栏)**:每行显示图集名 + 图片数;右键菜单提供「重命名 / 删除」;底部「新建图集」按钮
+- F2.13.2 **图集 CRUD**:
+  - 新建:弹出输入框,名称非空 + 同名校验
+  - 重命名:右键 → 输入新名称
+  - 删除:二次确认;删除图集时一并删除图集内所有图片(DB 记录 + 磁盘文件);默认图集不可删除
+- F2.13.3 **默认图集**:首次运行自动创建名为「默认图集」的初始图集;旧数据(`album_id IS NULL`)归入默认图集
+- F2.13.4 缩略图网格浏览(右栏,仅显示当前选中图集的图片)
+- F2.13.5 文件导入(单张或多张 `.jpg`/`.png`/`.bmp` 文件 → **当前选中图集**,复制不移动)
+- F2.13.6 文件夹批量导入(递归扫描 → **当前选中图集**,复制不移动)
+- F2.13.7 全局快捷键截图(`F9`;应用在后台时亦可触发;截图存入 `image_library_files/` 目录并归入**当前选中图集**)
+- F2.13.8 删除选中图片(二次确认;仅删库记录 + 磁盘文件,不影响已导入训练集的副本)
+- F2.13.9 **选中导入到训练集**:可选「仅选中图片」或「当前图集全部图片」→ 选择目标训练任务 → 复制到该任务 `dataset/images/`
+- F2.13.10 顶部状态栏显示当前图集名 + F9 热键状态;底部状态栏显示当前图集图片数 + 今日截图数
 
 **全局快捷键设计约束**:
 
 - 热键监听在独立守护线程运行,应用关闭时随主进程退出
 - 截图使用已有 `mss` 依赖,捕获全屏
 - 热键依赖库:`keyboard==0.13.5`(已引入)
+- 热键截图目标始终是 UI 当前选中的图集 id(`_current_album_id`)
 - 热键冲突(与 WoW 按键重叠)由用户自行配置回避
 
 **验收标准**:
 
-- [ ] WoW 全屏运行时按快捷键能截图并存入图库(应用在后台)
-- [ ] 截图文件名不碰撞(时间戳 + 随机后缀)
-- [ ] 导入到训练集后,训练集图片数量正确更新
-- [ ] 缩略图网格支持 500 张不明显卡顿
-- [ ] 快捷键配置持久化(写入 Settings 或独立配置文件)
+- [x] WoW 全屏运行时按 F9 截图,落入当前选中图集
+- [x] 切换图集后,F9 截图目标随之切换
+- [x] 删除图集 → 图集内所有图片(DB + 磁盘)同步删除
+- [x] 默认图集不可删除(按钮置灰或拒绝操作)
+- [x] 旧数据迁移:`image_library.album_id IS NULL` 的行自动归入默认图集
+- [x] 缩略图网格按当前图集过滤,500 张内不明显卡顿
 
 ---
 
@@ -265,10 +287,10 @@
 ```
 MainWindow (~160 行,仅做布局 + Tab 挂载)
 ├── 顶部菜单
-├── QTabWidget
+├── QTabWidget(从左到右)
+│   ├── ImageLibraryTab          — 图库(图集分组 + 截图采集 + 导入训练集)
 │   ├── TrainingTab              — 训练集管理
 │   ├── TrainingResultTab        — 模型版本管理
-│   ├── ImageLibraryTab          — 图库(截图采集 + 导入训练集)⏳
 │   ├── RecognitionTestTab       — 识别测试(不触发点击)
 │   ├── RecognitionActionTab     — 识别操作(触发点击/脚本)
 │   ├── DisplacementTestTab      — 位移测试(目标位移超阈值才提示)
@@ -412,15 +434,18 @@ if past_center 存在 and distance(current_center, past_center) > displacement_t
 | `recognition_logs` | 识别日志 | id, recognition_task_id (FK), log_level, log_message |
 | `recognition_details` | 识别详情 | id, recognition_task_id (FK), timestamp, target_x/y, confidence, target_class |
 | `model_versions` | 模型版本 | id, training_task_id (FK), model_path, version, is_default, file_size |
-| `image_library` | 图库条目 | id, file_path, source(`screenshot`/`import`), created_at |
+| `image_library_albums` | 图集分组 | id, name(UNIQUE), created_at |
+| `image_library` | 图库条目 | id, album_id (FK, nullable=旧数据), file_path, source(`screenshot`/`import`), created_at |
 
 **关系图**:
-```
+
+```text
 TrainingTask (1) ──< (N) TrainingLog
 TrainingTask (1) ──< (N) ModelVersion
 TrainingTask (1) ──< (N) RecognitionTask
 RecognitionTask (1) ──< (N) RecognitionLog
 RecognitionTask (1) ──< (N) RecognitionDetail
+ImageLibraryAlbum (1) ──< (N) ImageLibrary
 ```
 
 **索引**:见 `sql/create_tables.sql`(单一权威),关键索引 `idx_training_task_status`、`idx_recognition_log_task`、`idx_model_version_default`。
@@ -625,6 +650,7 @@ MainWindow.closeEvent:
 
 | 日期 | 版本 | 改动 |
 |------|------|------|
+| 2026-05-22 | v1.3 | M3 图库重构:§2.13 引入「图集」概念(左右两栏 UI + 图集 CRUD + 默认图集)、§4.1 ImageLibraryTab 提为第一个 Tab、§5.6 新增 `image_library_albums` 表 + `image_library.album_id` FK |
 | 2026-05-22 | v1.2 | M3 图库功能:新增 §2.13 ImageLibraryTab 规格、§4.1 Tab 结构更新、§5.3 模块清单补充、§5.6 image_library 表 |
 | 2026-05-22 | v1.1 | M2-前置2 位移感知:新增 §2.8 DisplacementTestTab、§2.9 DisplacementActionTab、§5.5 DisplacementTracker 算法 |
 | 2026-05-19 | v1.0 | 初版。由 olddocs/原始设计文档/ 10 份文档 + 实际代码扫描合并产出 |
