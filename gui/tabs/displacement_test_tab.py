@@ -126,20 +126,41 @@ class DisplacementTestTab(QWidget):
         disp_group = QGroupBox("位移检测参数")
         disp_layout = QVBoxLayout(disp_group)
 
-        thr_layout = QHBoxLayout()
-        thr_layout.addWidget(QLabel("位移阈值:"))
+        # 灵敏度:实际触发阈值 = bbox 对角线 × ratio,远近自适应
+        sens_layout = QHBoxLayout()
+        sens_lbl = QLabel("灵敏度:")
+        sens_lbl.setToolTip("以目标自身大小为基准:位移超过 bbox 对角线的此百分比即触发")
+        sens_layout.addWidget(sens_lbl)
         self.disp_slider = QSlider(Qt.Horizontal)
-        self.disp_slider.setMinimum(10)
-        self.disp_slider.setMaximum(300)
-        self.disp_slider.setValue(50)
+        self.disp_slider.setMinimum(5)
+        self.disp_slider.setMaximum(50)
+        self.disp_slider.setValue(20)
         self.disp_slider.valueChanged.connect(
-            lambda v: self.disp_label.setText(f"{v} px")
+            lambda v: self.disp_label.setText(f"{v} %")
         )
-        thr_layout.addWidget(self.disp_slider)
-        self.disp_label = QLabel("50 px")
+        sens_layout.addWidget(self.disp_slider)
+        self.disp_label = QLabel("20 %")
         self.disp_label.setFixedWidth(60)
-        thr_layout.addWidget(self.disp_label)
-        disp_layout.addLayout(thr_layout)
+        sens_layout.addWidget(self.disp_label)
+        disp_layout.addLayout(sens_layout)
+
+        # 最小绝对阈值:防止远处目标 bbox 太小导致 YOLO 抖动假阳
+        floor_layout = QHBoxLayout()
+        floor_lbl = QLabel("最小阈值:")
+        floor_lbl.setToolTip("无论目标多小,触发都需要至少这么多像素的位移;默认 5 px 兜底")
+        floor_layout.addWidget(floor_lbl)
+        self.floor_slider = QSlider(Qt.Horizontal)
+        self.floor_slider.setMinimum(1)
+        self.floor_slider.setMaximum(30)
+        self.floor_slider.setValue(5)
+        self.floor_slider.valueChanged.connect(
+            lambda v: self.floor_label.setText(f"{v} px")
+        )
+        floor_layout.addWidget(self.floor_slider)
+        self.floor_label = QLabel("5 px")
+        self.floor_label.setFixedWidth(60)
+        floor_layout.addWidget(self.floor_label)
+        disp_layout.addLayout(floor_layout)
 
         win_layout = QHBoxLayout()
         win_layout.addWidget(QLabel("时间窗口:"))
@@ -198,17 +219,9 @@ class DisplacementTestTab(QWidget):
         tip.setWordWrap(True)
         layout.addWidget(tip)
 
-        # 左侧底部留弹性空间,参数往顶部贴
-        layout.addStretch(1)
-        main_splitter.addWidget(left_panel)
-
-        # --- 识别结果 ---
-        result_group = QGroupBox("识别结果")
+        # --- 识别日志(填充左侧剩余空间) ---
+        result_group = QGroupBox("识别日志")
         result_layout = QVBoxLayout(result_group)
-
-        self.stats_label = QLabel("位移测试未运行")
-        self.stats_label.setStyleSheet("font-weight: bold; padding: 4px;")
-        result_layout.addWidget(self.stats_label)
 
         toolbar = QHBoxLayout()
         self.chk_preview = QCheckBox("实时预览画面")
@@ -221,31 +234,30 @@ class DisplacementTestTab(QWidget):
         toolbar.addStretch()
         result_layout.addLayout(toolbar)
 
-        splitter = QSplitter(Qt.Horizontal)
+        self.stats_label = QLabel("位移测试未运行")
+        self.stats_label.setStyleSheet("font-weight: bold; padding: 4px;")
+        result_layout.addWidget(self.stats_label)
 
+        self.result_text = QTextEdit()
+        self.result_text.setReadOnly(True)
+        self.result_text.setLineWrapMode(QTextEdit.NoWrap)
+        result_layout.addWidget(self.result_text, 1)
+
+        # 日志区拿走左侧底部所有剩余空间(stretch=1)
+        layout.addWidget(result_group, 1)
+        main_splitter.addWidget(left_panel)
+
+        # --- 预览(独占右侧) ---
         self.preview_label = QLabel("预览（开始测试后显示画面）")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setMinimumSize(320, 240)
         self.preview_label.setStyleSheet(
             "QLabel { background-color: #1e1e1e; color: #888; border: 1px solid #444; }"
         )
-        splitter.addWidget(self.preview_label)
-
-        self.result_text = QTextEdit()
-        self.result_text.setReadOnly(True)
-        self.result_text.setLineWrapMode(QTextEdit.NoWrap)
-        splitter.addWidget(self.result_text)
-
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([720, 240])
-        result_layout.addWidget(splitter, 1)
-
-        # result_group 放入主分栏右侧,占据主要空间
-        main_splitter.addWidget(result_group)
+        main_splitter.addWidget(self.preview_label)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
-        main_splitter.setSizes([360, 1200])
+        main_splitter.setSizes([400, 1200])
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(1, False)
 
@@ -332,12 +344,14 @@ class DisplacementTestTab(QWidget):
             model_path = self.model_combo.itemData(model_index)
             confidence_threshold = self.conf_slider.value() / 100.0
             device = self.device_combo.currentData() or "cpu"
-            threshold_px = float(self.disp_slider.value())
+            displacement_ratio = self.disp_slider.value() / 100.0
+            min_displacement_px = float(self.floor_slider.value())
             window_s = self.window_slider.value() / 10.0
             cooldown_s = self.cooldown_slider.value() / 10.0
 
             self._tracker = DisplacementTracker(
-                displacement_threshold_px=threshold_px,
+                displacement_ratio=displacement_ratio,
+                min_displacement_px=min_displacement_px,
                 window_seconds=window_s,
                 trigger_cooldown_s=cooldown_s,
             )
@@ -465,10 +479,11 @@ class DisplacementTestTab(QWidget):
         for det in triggered:
             cx, cy = det.get("center", (0, 0))
             dist = det.get("displacement_px", "?")
+            thr = det.get("threshold_px", "?")
             cls = det.get("class_name", "unknown")
             conf = float(det.get("confidence", 0))
             self.result_text.append(
-                f"  {cls}  中心({cx:.0f}, {cy:.0f})  位移 {dist} px  置信度 {conf:.2%}"
+                f"  {cls}  中心({cx:.0f}, {cy:.0f})  位移 {dist}/{thr} px  置信度 {conf:.2%}"
             )
         sb = self.result_text.verticalScrollBar()
         sb.setValue(sb.maximum())

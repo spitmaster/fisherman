@@ -406,33 +406,58 @@ MainWindow (~160 行,仅做布局 + Tab 挂载)
 
 文件:`recognition/displacement_tracker.py`。纯内存对象,不写数据库。
 
+**核心理念:相对位移(深度自适应)**
+
+3D 场景下,真实世界的同一段运动在屏幕上的像素数取决于目标距离 — 近的目标 bbox 大、像素位移大,远的目标 bbox 小、像素位移小。**绝对像素阈值无法兼顾远近**。
+
+本 tracker 把阈值绑定到目标自身大小:
+
+```
+threshold_px(per detection) = max(min_displacement_px, bbox_diagonal × displacement_ratio)
+```
+
+- `bbox_diagonal = hypot(bw, bh)` — 当前帧该检测的 bbox 对角线
+- `displacement_ratio` — 用户调的「灵敏度」(默认 20%,即位移超过 bbox 对角线的 20% 触发)
+- `min_displacement_px` — **绝对下限**,防远处 bbox 太小时阈值过小被 YOLO 检测抖动假阳(默认 5 px)
+
 **追踪算法(每帧)**:
 
-1. 遍历当前帧所有检测结果
-2. 对每个检测框,在 **同 class** 的已有轨迹中找中心点欧氏距离最近的轨迹
-3. 若最近轨迹距离 ≤ `match_radius_px`(默认 = `displacement_threshold_px × 2`):匹配成功,更新轨迹历史
-4. 否则:创建新轨迹,写入初始位置;本帧不触发(无历史可比)
-5. 超过 `track_timeout_s`(默认 3 s)未被匹配的轨迹从状态中清除
+1. 遍历当前帧所有检测结果,取出 `(class_name, center, bbox)`
+2. 对每个检测,在**同 class** 已有轨迹中找中心点欧氏距离最近的轨迹
+3. 匹配半径 = `max(min_displacement_px × 4, threshold_px × 2)`,**也跟着 bbox 自适应**
+4. 匹配成功 → 更新轨迹历史(写入 `ts, cx, cy, bw, bh`)
+5. 匹配失败 → 创建新轨迹,本帧不触发(无历史可比)
+6. 超过 `track_timeout_s`(默认 3 s)未被匹配的轨迹从状态中清除
 
 **位移判定**:
 
 ```
 past_center = 轨迹历史中时间戳最接近 (now - window_seconds) 的记录
-if past_center 存在 and distance(current_center, past_center) > displacement_threshold_px:
-    触发
+threshold = max(min_displacement_px, current_bbox_diag × displacement_ratio)
+if past_center 存在 and distance(current_center, past_center) > threshold:
+    触发(返回字典中追加 displacement_px + threshold_px)
 ```
 
 **可配置参数**:
 
 | 参数 | 默认 | 范围 | UI 控件 |
 |---|---|---|---|
-| `displacement_threshold_px` | 50 | 10–300 | 滑块 |
-| `window_seconds` | 2.0 | 0.5–10.0 | 滑块 |
-| `trigger_cooldown_s` | 1.0 | 0–10 | 滑块 |
-| `match_radius_px` | 自动(= threshold × 2) | — | 不暴露 |
+| `displacement_ratio` | 0.20 | 5–50 % | 「灵敏度」滑块 |
+| `min_displacement_px` | 5 | 1–30 px | 「最小阈值」滑块 |
+| `window_seconds` | 2.0 | 0.5–10.0 s | 「时间窗口」滑块 |
+| `trigger_cooldown_s` | 1.0 | 0–10 s | 「触发冷却」滑块 |
 | `track_timeout_s` | 3.0 | — | 不暴露 |
 
-**不变量约束**:禁止引入 `sort`/`deep_sort` 等外部追踪库(不变量 5 uv.lock 锁定);简单质心匹配已满足单目标 / 稀疏多目标场景。
+**典型效果**:
+
+| 场景 | bbox | 自动阈值(ratio=20%) | 8 px 位移 | 12 px 位移 |
+|------|------|--------------------|---------|----------|
+| 近距浮漂 | 80×80,diag≈113 | 22.6 px | ❌ | ❌(自然漂浮也不会误触发) |
+| 中距浮漂 | 50×50,diag≈71 | 14.2 px | ❌ | ❌ |
+| 远距浮漂 | 30×30,diag≈42 | **8.4 px** | ⚠ 临界 | ✅ 触发 |
+| 极远浮漂 | 15×15,diag≈21 | min 5 px 兜底 | ✅ 触发 | ✅ 触发 |
+
+**不变量约束**:禁止引入 `sort`/`deep_sort` 等外部追踪库(不变量 5 uv.lock 锁定);简单质心匹配 + bbox 自适应阈值已满足单目标 / 稀疏多目标场景。
 
 ### 5.6 数据模型
 

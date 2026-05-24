@@ -107,20 +107,41 @@ class DisplacementActionTab(QWidget):
         disp_group = QGroupBox("位移检测参数")
         disp_layout = QVBoxLayout(disp_group)
 
-        thr_layout = QHBoxLayout()
-        thr_layout.addWidget(QLabel("位移阈值:"))
+        # 灵敏度:实际触发阈值 = bbox 对角线 × ratio,远近自适应
+        sens_layout = QHBoxLayout()
+        sens_lbl = QLabel("灵敏度:")
+        sens_lbl.setToolTip("以目标自身大小为基准:位移超过 bbox 对角线的此百分比即触发")
+        sens_layout.addWidget(sens_lbl)
         self.disp_slider = QSlider(Qt.Horizontal)
-        self.disp_slider.setMinimum(10)
-        self.disp_slider.setMaximum(300)
-        self.disp_slider.setValue(50)
+        self.disp_slider.setMinimum(5)
+        self.disp_slider.setMaximum(50)
+        self.disp_slider.setValue(20)
         self.disp_slider.valueChanged.connect(
-            lambda v: self.disp_label.setText(f"{v} px")
+            lambda v: self.disp_label.setText(f"{v} %")
         )
-        thr_layout.addWidget(self.disp_slider)
-        self.disp_label = QLabel("50 px")
+        sens_layout.addWidget(self.disp_slider)
+        self.disp_label = QLabel("20 %")
         self.disp_label.setFixedWidth(60)
-        thr_layout.addWidget(self.disp_label)
-        disp_layout.addLayout(thr_layout)
+        sens_layout.addWidget(self.disp_label)
+        disp_layout.addLayout(sens_layout)
+
+        # 最小绝对阈值:防止远处目标 bbox 太小导致 YOLO 抖动假阳
+        floor_layout = QHBoxLayout()
+        floor_lbl = QLabel("最小阈值:")
+        floor_lbl.setToolTip("无论目标多小,触发都需要至少这么多像素的位移;默认 5 px 兜底")
+        floor_layout.addWidget(floor_lbl)
+        self.floor_slider = QSlider(Qt.Horizontal)
+        self.floor_slider.setMinimum(1)
+        self.floor_slider.setMaximum(30)
+        self.floor_slider.setValue(5)
+        self.floor_slider.valueChanged.connect(
+            lambda v: self.floor_label.setText(f"{v} px")
+        )
+        floor_layout.addWidget(self.floor_slider)
+        self.floor_label = QLabel("5 px")
+        self.floor_label.setFixedWidth(60)
+        floor_layout.addWidget(self.floor_label)
+        disp_layout.addLayout(floor_layout)
 
         win_layout = QHBoxLayout()
         win_layout.addWidget(QLabel("时间窗口:"))
@@ -287,12 +308,14 @@ class DisplacementActionTab(QWidget):
             model_path = self.model_combo.itemData(model_index)
             confidence_threshold = self.conf_slider.value() / 100.0
             device = self.device_combo.currentData() or "cpu"
-            threshold_px = float(self.disp_slider.value())
+            displacement_ratio = self.disp_slider.value() / 100.0
+            min_displacement_px = float(self.floor_slider.value())
             window_s = self.window_slider.value() / 10.0
             cooldown_s = self.cooldown_slider.value() / 10.0
 
             self._tracker = DisplacementTracker(
-                displacement_threshold_px=threshold_px,
+                displacement_ratio=displacement_ratio,
+                min_displacement_px=min_displacement_px,
                 window_seconds=window_s,
                 trigger_cooldown_s=cooldown_s,
             )
