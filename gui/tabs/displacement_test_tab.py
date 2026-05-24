@@ -56,7 +56,16 @@ class DisplacementTestTab(QWidget):
     # ------------------------------------------------------------------
 
     def _init_ui(self):
-        layout = QVBoxLayout(self)
+        # 左右分栏:左侧窄列放所有参数,右侧主区放识别结果(预览 + 日志),
+        # 这样预览可以拿到 ~整个 tab 高度,不再被参数区往下挤
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(4, 4, 4, 4)
+
+        main_splitter = QSplitter(Qt.Horizontal)
+
+        left_panel = QWidget()
+        layout = QVBoxLayout(left_panel)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         # --- 识别参数 ---
         params_group = QGroupBox("识别参数")
@@ -186,7 +195,12 @@ class DisplacementTestTab(QWidget):
 
         tip = QLabel("提示：仅当目标位移超过阈值时才记录日志；预览画面仍显示所有检测框。")
         tip.setStyleSheet("color: #666; font-style: italic;")
+        tip.setWordWrap(True)
         layout.addWidget(tip)
+
+        # 左侧底部留弹性空间,参数往顶部贴
+        layout.addStretch(1)
+        main_splitter.addWidget(left_panel)
 
         # --- 识别结果 ---
         result_group = QGroupBox("识别结果")
@@ -227,7 +241,15 @@ class DisplacementTestTab(QWidget):
         splitter.setSizes([720, 240])
         result_layout.addWidget(splitter, 1)
 
-        layout.addWidget(result_group, 1)
+        # result_group 放入主分栏右侧,占据主要空间
+        main_splitter.addWidget(result_group)
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
+        main_splitter.setSizes([360, 1200])
+        main_splitter.setCollapsible(0, False)
+        main_splitter.setCollapsible(1, False)
+
+        root_layout.addWidget(main_splitter)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_stats)
