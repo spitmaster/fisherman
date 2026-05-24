@@ -7,10 +7,14 @@
 """
 
 import logging
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QMessageBox
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QMessageBox,
+    QDialog, QFormLayout, QComboBox, QDialogButtonBox,
+)
 from PyQt5.QtCore import pyqtSignal
 
 from training.task.dataset_manager import DatasetManager
+from image_library.library_manager import library_manager
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,10 @@ class ImagesTab(QWidget):
         btn_import = QPushButton("导入图片")
         btn_import.clicked.connect(self.import_images)
 
+        btn_import_album = QPushButton("从图库导入图集")
+        btn_import_album.setToolTip("把图库里指定图集的全部图片复制到当前训练集")
+        btn_import_album.clicked.connect(self.import_from_album)
+
         btn_refresh = QPushButton("刷新列表")
         btn_refresh.clicked.connect(self.load_images)
 
@@ -56,6 +64,7 @@ class ImagesTab(QWidget):
         btn_delete_all.setStyleSheet("background-color: #f44336; color: white;")
 
         btn_layout.addWidget(btn_import)
+        btn_layout.addWidget(btn_import_album)
         btn_layout.addWidget(btn_refresh)
         btn_layout.addWidget(btn_start_annotation)
         btn_layout.addWidget(btn_delete_all)
@@ -98,6 +107,53 @@ class ImagesTab(QWidget):
         except Exception as e:
             logger.error(f"导入图片失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"导入图片失败: {str(e)}")
+
+    def import_from_album(self):
+        """从图库选择一个图集,把它内部所有图片复制到当前训练集 images/。"""
+        try:
+            albums = library_manager.get_all_albums()
+            if not albums:
+                QMessageBox.information(
+                    self, "提示",
+                    "图库里还没有任何图集,请先到「图库」标签页新建并采集图片。",
+                )
+                return
+
+            dlg = QDialog(self)
+            dlg.setWindowTitle("从图库导入图集")
+            dlg.setMinimumWidth(360)
+            form = QFormLayout(dlg)
+
+            combo = QComboBox()
+            for a in albums:
+                combo.addItem(f"{a['name']}  ({a['image_count']} 张)", a['id'])
+            form.addRow("选择图集:", combo)
+
+            btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            btns.accepted.connect(dlg.accept)
+            btns.rejected.connect(dlg.reject)
+            form.addRow(btns)
+
+            if dlg.exec_() != QDialog.Accepted:
+                return
+
+            album_id = combo.currentData()
+            album_label = combo.currentText()
+            if not album_id:
+                return
+
+            count = library_manager.import_album_to_dataset(album_id, self.dataset_name)
+            if count <= 0:
+                QMessageBox.warning(self, "失败", f"未能从「{album_label}」导入任何图片(图集可能为空或源文件缺失)")
+                return
+
+            self.load_images()
+            self.images_imported.emit(count)
+            QMessageBox.information(self, "成功", f"从图集「{album_label}」导入 {count} 张图片到训练集")
+            logger.info(f"从图集 {album_id} 导入 {count} 张到训练集 {self.dataset_name}")
+        except Exception as e:
+            logger.error(f"从图库导入图集失败: {e}")
+            QMessageBox.critical(self, "错误", f"从图库导入图集失败: {e}")
 
     def delete_all_images(self):
         """清空所有图片"""

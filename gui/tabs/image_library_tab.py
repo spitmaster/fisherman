@@ -17,10 +17,11 @@ from PyQt5.QtWidgets import (
     QMessageBox, QFileDialog, QInputDialog, QMenu, QAction,
     QDialog, QDialogButtonBox, QComboBox, QFormLayout, QRadioButton, QButtonGroup,
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, pyqtSlot
-from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, pyqtSlot, QUrl
+from PyQt5.QtGui import QIcon, QPixmap, QImage, QColor, QDesktopServices
 
-from image_library.library_manager import library_manager
+from image_library.library_manager import library_manager, LIBRARY_DIR
+from gui.screen_area_selector import ScreenAreaSelector
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,12 @@ class ImageLibraryTab(QWidget):
 
     _thumbnail_ready = pyqtSignal(str, object)  # (image_id, QImage | None)
     _screenshot_taken = pyqtSignal(str, str)    # (image_id, album_id)
+    _request_select_area = pyqtSignal()         # 跨线程:F9 自由框选
+    _request_select_area_fixed = pyqtSignal()   # 跨线程:F8 固定 800×600 跟随
 
     DEFAULT_HOTKEY = 'f9'
+    FIXED_HOTKEY = 'f8'
+    FIXED_SIZE = (800, 600)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -39,13 +44,19 @@ class ImageLibraryTab(QWidget):
         self._hotkey_registered = False
         self._placeholder = self._make_placeholder()
         self._current_album_id = ''
+        self._selector = None  # 当前活动的 ScreenAreaSelector(防止重复弹出)
         self._init_ui()
         self._thumbnail_ready.connect(self._on_thumbnail_ready)
         self._screenshot_taken.connect(self._on_screenshot_taken)
-        # 启动时确保默认图集存在
-        default_id = library_manager.ensure_default_album()
-        self._current_album_id = default_id
+        self._request_select_area.connect(self._open_area_selector)
+        self._request_select_area_fixed.connect(self._open_fixed_area_selector)
         self._start_hotkey()
+        # 一次性迁移:升级前散落在 image_library_files/ 根目录的旧文件按 album_id 归位
+        try:
+            library_manager.migrate_to_album_dirs()
+        except Exception as e:
+            logger.warning(f"图集子目录迁移失败(忽略,不影响功能): {e}")
+        # 不再自动创建默认图集;若已有图集 refresh_albums 会选第一个,否则 UI 留空待用户新建
         self.refresh_albums()
 
     # ------------------------------------------------------------------ UI --
@@ -88,21 +99,37 @@ class ImageLibraryTab(QWidget):
         self.btn_import_folder.clicked.connect(self._import_folder)
         top.addWidget(self.btn_import_folder)
 
+        self.btn_open_dir = QPushButton("打开文件夹")
+        self.btn_open_dir.setToolTip(
+            "用系统文件管理器打开当前图集所在子目录(image_library_files/<album_id>/)"
+        )
+        self.btn_open_dir.clicked.connect(self._open_library_dir)
+        top.addWidget(self.btn_open_dir)
+
         top.addStretch()
 
         self.current_album_label = QLabel("当前图集: —")
         self.current_album_label.setStyleSheet("QLabel { font-weight: bold; }")
         top.addWidget(self.current_album_label)
 
-        self.hotkey_label = QLabel("截图热键: F9 [未启用]")
+        self.hotkey_label = QLabel("截图热键: F9 框选 / F8 800×600 跟随 [未启用]")
+        self.hotkey_label.setToolTip(
+            "F9:拖拽框选任意大小区域\n"
+            "F8:800×600 框跟随鼠标,左键确认\n"
+            "Esc 均可取消"
+        )
         top.addWidget(self.hotkey_label)
 
         right_layout.addLayout(top)
 
-        # 缩略图网格
+        # 缩略图网格:固定 gridSize 避免长文件名换行后撑高 item
         self.list_widget = QListWidget()
         self.list_widget.setViewMode(QListWidget.IconMode)
         self.list_widget.setIconSize(QSize(120, 120))
+        self.list_widget.setGridSize(QSize(140, 160))
+        self.list_widget.setUniformItemSizes(True)
+        self.list_widget.setWordWrap(False)
+        self.list_widget.setTextElideMode(Qt.ElideMiddle)
         self.list_widget.setSpacing(8)
         self.list_widget.setResizeMode(QListWidget.Adjust)
         self.list_widget.setSelectionMode(QListWidget.ExtendedSelection)
@@ -163,7 +190,6 @@ class ImageLibraryTab(QWidget):
             item = QListWidgetItem(display)
             item.setData(Qt.UserRole, a['id'])
             item.setData(Qt.UserRole + 1, a['name'])
-            item.setData(Qt.UserRole + 2, a['is_default'])
             self.album_list.addItem(item)
             if a['id'] == self._current_album_id:
                 target_row = idx
@@ -207,14 +233,10 @@ class ImageLibraryTab(QWidget):
         item = self.album_list.itemAt(pos)
         if not item:
             return
-        is_default = item.data(Qt.UserRole + 2)
 
         menu = QMenu(self)
         act_rename = QAction("重命名", self)
         act_delete = QAction("删除图集", self)
-        if is_default:
-            act_rename.setEnabled(False)
-            act_delete.setEnabled(False)
         menu.addAction(act_rename)
         menu.addAction(act_delete)
 
@@ -234,7 +256,7 @@ class ImageLibraryTab(QWidget):
         if not new_name or new_name == old_name:
             return
         if not library_manager.rename_album(album_id, new_name):
-            QMessageBox.warning(self, "提示", "重命名失败(名称为空 / 已存在 / 默认图集不可改)")
+            QMessageBox.warning(self, "提示", "重命名失败(名称为空 / 已存在)")
             return
         self.refresh_albums()
 
@@ -253,7 +275,8 @@ class ImageLibraryTab(QWidget):
             QMessageBox.warning(self, "提示", "删除失败")
             return
         if self._current_album_id == album_id:
-            self._current_album_id = library_manager.ensure_default_album()
+            # 当前图集被删:置空,refresh_albums 会自动选下一个剩余图集(若有)
+            self._current_album_id = ''
         self.refresh_albums()
 
     # --------------------------------------------------------- 加载图片 ------
@@ -269,7 +292,8 @@ class ImageLibraryTab(QWidget):
 
         items = library_manager.get_images(self._current_album_id)
         for item in items:
-            lw_item = QListWidgetItem(self._placeholder, os.path.basename(item['file_path']))
+            display = self._format_display_name(item['file_path'], item['source'])
+            lw_item = QListWidgetItem(self._placeholder, display)
             lw_item.setData(Qt.UserRole, item['id'])
             lw_item.setData(Qt.UserRole + 1, item['file_path'])
             ts = item['created_at'].strftime('%Y-%m-%d %H:%M:%S') if item['created_at'] else ''
@@ -349,6 +373,21 @@ class ImageLibraryTab(QWidget):
         for item in selected:
             library_manager.delete(item.data(Qt.UserRole))
         self.refresh_library()
+
+    def _open_library_dir(self):
+        """用系统文件管理器打开当前图集的子目录;没选中图集时退回到图库根目录。"""
+        try:
+            if self._current_album_id:
+                target = library_manager.get_album_dir(self._current_album_id)
+            else:
+                library_manager.ensure_dir()
+                target = LIBRARY_DIR
+            url = QUrl.fromLocalFile(target)
+            if not QDesktopServices.openUrl(url):
+                QMessageBox.warning(self, "打开失败", f"无法打开文件夹:\n{target}")
+        except Exception as e:
+            logger.error(f"打开图库目录失败: {e}")
+            QMessageBox.warning(self, "打开失败", f"打开图库目录失败: {e}")
 
     def _import_files(self):
         if not self._current_album_id:
@@ -520,12 +559,19 @@ class ImageLibraryTab(QWidget):
         try:
             import keyboard
             keyboard.add_hotkey(self.DEFAULT_HOTKEY, self._on_hotkey_pressed)
+            keyboard.add_hotkey(self.FIXED_HOTKEY, self._on_fixed_hotkey_pressed)
             self._hotkey_registered = True
-            self.hotkey_label.setText(f"截图热键: {self.DEFAULT_HOTKEY.upper()} [已启用]")
-            logger.info(f"全局截图热键已注册: {self.DEFAULT_HOTKEY}")
+            fw, fh = self.FIXED_SIZE
+            self.hotkey_label.setText(
+                f"截图热键: F9 框选 / F8 {fw}×{fh} 跟随 [已启用]"
+            )
+            logger.info(
+                f"全局截图热键已注册: F9={self.DEFAULT_HOTKEY} 自由框选, "
+                f"F8={self.FIXED_HOTKEY} 固定 {fw}×{fh} 跟随"
+            )
         except Exception as e:
             logger.error(f"注册截图热键失败: {e}")
-            self.hotkey_label.setText(f"截图热键: {self.DEFAULT_HOTKEY.upper()} [注册失败]")
+            self.hotkey_label.setText("截图热键: F9 框选 / F8 跟随 [注册失败]")
 
     def _stop_hotkey(self):
         if not self._hotkey_registered:
@@ -533,20 +579,70 @@ class ImageLibraryTab(QWidget):
         try:
             import keyboard
             keyboard.remove_hotkey(self.DEFAULT_HOTKEY)
+            keyboard.remove_hotkey(self.FIXED_HOTKEY)
             self._hotkey_registered = False
             logger.info("全局截图热键已注销")
         except Exception as e:
             logger.warning(f"注销截图热键失败: {e}")
 
     def _on_hotkey_pressed(self):
-        """keyboard 后台线程触发:截图并通知主线程。"""
-        target_album = self._current_album_id
-        if not target_album:
+        """keyboard 后台线程触发(F9):发信号到主线程弹出自由框选选择器。"""
+        if not self._current_album_id:
             logger.warning("无当前图集,跳过截图")
             return
-        image_id = library_manager.take_screenshot(album_id=target_album)
-        if image_id:
-            self._screenshot_taken.emit(image_id, target_album)
+        self._request_select_area.emit()
+
+    def _on_fixed_hotkey_pressed(self):
+        """keyboard 后台线程触发(F8):发信号到主线程弹出固定尺寸跟随选择器。"""
+        if not self._current_album_id:
+            logger.warning("无当前图集,跳过截图")
+            return
+        self._request_select_area_fixed.emit()
+
+    @pyqtSlot()
+    def _open_area_selector(self):
+        """主线程槽:F9 自由框选。任一选择器已弹出时再按热键会被忽略。"""
+        self._open_selector(fixed_size=None)
+
+    @pyqtSlot()
+    def _open_fixed_area_selector(self):
+        """主线程槽:F8 固定尺寸跟随鼠标,左键确认。"""
+        self._open_selector(fixed_size=self.FIXED_SIZE)
+
+    def _open_selector(self, fixed_size):
+        if self._selector is not None and self._selector.isVisible():
+            return
+        try:
+            self._selector = ScreenAreaSelector(fixed_size=fixed_size)
+            self._selector.area_selected.connect(self._on_screenshot_area_selected)
+            self._selector.cancelled.connect(self._on_screenshot_area_cancelled)
+            self._selector.show()
+            self._selector.activateWindow()
+            self._selector.raise_()
+        except Exception as e:
+            logger.error(f"打开截图区域选择器失败: {e}")
+            self._selector = None
+
+    def _on_screenshot_area_selected(self, x: int, y: int, width: int, height: int):
+        """框选完成:在后台线程抓取该区域并写盘,避免阻塞 UI。"""
+        self._selector = None
+        target_album = self._current_album_id
+        if not target_album:
+            return
+        region = (x, y, width, height)
+
+        def _worker():
+            image_id = library_manager.take_screenshot(
+                album_id=target_album,
+                region=region,
+            )
+            if image_id:
+                self._screenshot_taken.emit(image_id, target_album)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_screenshot_area_cancelled(self):
+        self._selector = None
 
     @pyqtSlot(str, str)
     def _on_screenshot_taken(self, image_id: str, album_id: str):
@@ -561,10 +657,8 @@ class ImageLibraryTab(QWidget):
         if not new_item_data:
             return
 
-        lw_item = QListWidgetItem(
-            self._placeholder,
-            os.path.basename(new_item_data['file_path']),
-        )
+        display = self._format_display_name(new_item_data['file_path'], 'screenshot')
+        lw_item = QListWidgetItem(self._placeholder, display)
         lw_item.setData(Qt.UserRole, image_id)
         lw_item.setData(Qt.UserRole + 1, new_item_data['file_path'])
         ts = new_item_data['created_at'].strftime('%Y-%m-%d %H:%M:%S') if new_item_data['created_at'] else ''
@@ -599,6 +693,27 @@ class ImageLibraryTab(QWidget):
         pixmap = QPixmap(120, 120)
         pixmap.fill(QColor(210, 210, 210))
         return QIcon(pixmap)
+
+    @staticmethod
+    def _format_display_name(file_path: str, source: str) -> str:
+        """生成缩略图下方的短显示名。完整路径仍保留在 tooltip 中。
+        - 截图(`screenshot_YYYYMMDD_HHMMSS_xxx.png`)→ `截图 HH:MM:SS`
+        - 普通导入:文件名超过 18 字符则中间省略
+        """
+        base = os.path.basename(file_path)
+        if source == 'screenshot':
+            stem = os.path.splitext(base)[0]
+            if stem.startswith('screenshot_'):
+                parts = stem.split('_')
+                # 形如 ["screenshot", "20260524", "133859", "695"]
+                if len(parts) >= 3 and len(parts[2]) >= 6:
+                    t = parts[2]
+                    return f"截图 {t[:2]}:{t[2:4]}:{t[4:6]}"
+        if len(base) > 18:
+            stem, ext = os.path.splitext(base)
+            if len(stem) > 14:
+                return f"{stem[:8]}…{stem[-4:]}{ext}"
+        return base
 
     def closeEvent(self, event):
         self._load_stop.set()
