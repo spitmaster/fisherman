@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QFrame, QSplitter, QMessageBox, QSpinBox, QComboBox,
     QDialog, QDialogButtonBox, QFormLayout, QLineEdit
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QRect, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QRect, QPoint, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
 from training.task.dataset_manager import DatasetManager
@@ -36,35 +36,101 @@ class BoundingBox:
 
 
 class ImageLabel(QLabel):
-    """可显示和绘制边界框的图片标签"""
+    """可显示和绘制边界框的图片标签
+
+    设计要点(修复历史 bug):
+    - 自己接管绘制,**不**依赖 QLabel 默认的 pixmap 居中:从而避免「鼠标 widget 坐标」
+      与「pixmap 像素坐标」混用导致的 bbox 偏移、窗口缩放后位置漂移、画面看着像方块。
+    - 所有 mouse / draw 都通过 `_display_rect()` 这个单一来源换算:它返回当前 widget
+      内 pixmap 实际绘制的矩形(保持长宽比,居中),适配窗口大小。
+    - 存储一律是归一化 [0, 1],与图片实际像素无关;窗口怎么缩放显示都一致。
+    """
+
+    BBOX_COLORS = [
+        QColor(0, 255, 0),
+        QColor(255, 0, 0),
+        QColor(0, 0, 255),
+        QColor(255, 255, 0),
+        QColor(255, 0, 255),
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAlignment(Qt.AlignCenter)
         self.setMouseTracking(True)
+        self.setMinimumSize(400, 300)
         self.bounding_boxes: List[BoundingBox] = []
-        self.current_bbox: Optional[tuple] = None  # (x, y, w, h) in pixels
+        self.current_bbox: Optional[tuple] = None  # (x, y, w, h) 在 widget 坐标系
         self.drawing = False
-        self.start_pos = None
-        self.scale_factor = 1.0
-        self.class_names = {}
+        self.start_pos: Optional[QPoint] = None    # widget 坐标系
+        self.class_names: Dict[int, str] = {}
+        self._pixmap: Optional[QPixmap] = None     # 原始 pixmap,不交给 QLabel 自带绘制
 
     def set_class_names(self, class_names: Dict[int, str]):
-        """设置类别名称"""
         self.class_names = class_names
 
     def set_image(self, pixmap: QPixmap):
-        """设置图片"""
-        self.setPixmap(pixmap)
+        """设置图片。pixmap 保持原始大小,绘制时按 widget 自适配。"""
+        self._pixmap = pixmap
         self.bounding_boxes = []
         self.current_bbox = None
         self.update()
 
-    def load_annotations(self, annotation_path: Path, img_width: int, img_height: int):
-        """加载YOLO格式标注"""
+    def clear(self):
+        """清空图片和所有标注。"""
+        self._pixmap = None
+        self.bounding_boxes = []
+        self.current_bbox = None
+        super().clear()
+        self.update()
+
+    # ------------------------------------------------------- 坐标换算核心 --
+
+    def _display_rect(self) -> QRect:
+        """pixmap 在当前 widget 内的实际绘制矩形(保持长宽比 + 居中)。"""
+        if self._pixmap is None or self._pixmap.isNull():
+            return QRect()
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        ww, wh = self.width(), self.height()
+        if pw <= 0 or ph <= 0 or ww <= 0 or wh <= 0:
+            return QRect()
+        scale = min(ww / pw, wh / ph)
+        dw, dh = int(pw * scale), int(ph * scale)
+        dx, dy = (ww - dw) // 2, (wh - dh) // 2
+        return QRect(dx, dy, dw, dh)
+
+    def _clamp_to_display(self, pos: QPoint) -> QPoint:
+        """把 widget 坐标限制到 _display_rect 内(防止把框拖出图片范围)。"""
+        rect = self._display_rect()
+        if rect.isEmpty():
+            return pos
+        x = max(rect.left(), min(pos.x(), rect.right()))
+        y = max(rect.top(), min(pos.y(), rect.bottom()))
+        return QPoint(x, y)
+
+    def _widget_to_norm(self, x: int, y: int, w: int, h: int) -> Optional[tuple]:
+        """把 widget 坐标系下的 (x, y, w, h) 转成归一化 (cx, cy, nw, nh)。
+        若 display_rect 为空返回 None。
+        """
+        rect = self._display_rect()
+        if rect.isEmpty():
+            return None
+        norm_x = (x + w / 2 - rect.x()) / rect.width()
+        norm_y = (y + h / 2 - rect.y()) / rect.height()
+        norm_w = w / rect.width()
+        norm_h = h / rect.height()
+        # 兜底 clamp 到 [0, 1]
+        norm_x = max(0.0, min(1.0, norm_x))
+        norm_y = max(0.0, min(1.0, norm_y))
+        norm_w = max(0.0, min(1.0, norm_w))
+        norm_h = max(0.0, min(1.0, norm_h))
+        return (norm_x, norm_y, norm_w, norm_h)
+
+    # ---------------------------------------------------------- IO 标注 ---
+
+    def load_annotations(self, annotation_path: Path, img_width: int = 0, img_height: int = 0):
+        """加载 YOLO 格式标注(归一化值)。img_width/height 仅为兼容旧签名,内部不依赖。"""
         if not annotation_path.exists():
             return
-
         try:
             with open(annotation_path, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -81,7 +147,6 @@ class ImageLabel(QLabel):
             print(f"加载标注失败: {e}")
 
     def save_annotations(self, annotation_path: Path):
-        """保存YOLO格式标注"""
         try:
             with open(annotation_path, 'w', encoding='utf-8') as f:
                 for bbox in self.bounding_boxes:
@@ -89,111 +154,89 @@ class ImageLabel(QLabel):
         except Exception as e:
             print(f"保存标注失败: {e}")
 
+    # ---------------------------------------------------------- 鼠标事件 --
+
     def mousePressEvent(self, event):
-        """鼠标按下事件"""
-        if event.button() == Qt.LeftButton:
-            self.drawing = True
-            self.start_pos = event.pos()
-            self.current_bbox = None
+        if event.button() != Qt.LeftButton or self._pixmap is None:
+            return
+        rect = self._display_rect()
+        if rect.isEmpty() or not rect.contains(event.pos()):
+            # 点击落在图片范围之外,忽略,不开始绘制
+            return
+        self.drawing = True
+        self.start_pos = event.pos()
+        self.current_bbox = None
 
     def mouseMoveEvent(self, event):
-        """鼠标移动事件"""
-        if self.drawing and self.start_pos:
-            current_pos = event.pos()
-            x = min(self.start_pos.x(), current_pos.x())
-            y = min(self.start_pos.y(), current_pos.y())
-            w = abs(current_pos.x() - self.start_pos.x())
-            h = abs(current_pos.y() - self.start_pos.y())
-            self.current_bbox = (x, y, w, h)
-            self.update()
+        if not self.drawing or self.start_pos is None:
+            return
+        cur = self._clamp_to_display(event.pos())
+        x = min(self.start_pos.x(), cur.x())
+        y = min(self.start_pos.y(), cur.y())
+        w = abs(cur.x() - self.start_pos.x())
+        h = abs(cur.y() - self.start_pos.y())
+        self.current_bbox = (x, y, w, h)
+        self.update()
 
     def mouseReleaseEvent(self, event):
-        """鼠标释放事件"""
-        if event.button() == Qt.LeftButton and self.drawing:
-            self.drawing = False
-            if self.current_bbox:
-                x, y, w, h = self.current_bbox
-                # 忽略太小的框
-                if w > 5 and h > 5:
-                    # 转换为归一化坐标
-                    pixmap = self.pixmap()
-                    if pixmap:
-                        img_w = pixmap.width()
-                        img_h = pixmap.height()
-                        norm_x = (x + w / 2) / img_w
-                        norm_y = (y + h / 2) / img_h
-                        norm_w = w / img_w
-                        norm_h = h / img_h
-
-                        # 默认类别为0
-                        bbox = BoundingBox(norm_x, norm_y, norm_w, norm_h, 0)
-                        self.bounding_boxes.append(bbox)
-
-                self.current_bbox = None
-                self.update()
-
-    def paintEvent(self, event):
-        """绘制事件"""
-        super().paintEvent(event)
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # 绘制已保存的边界框
-        for i, bbox in enumerate(self.bounding_boxes):
-            self._draw_bbox(painter, bbox, i + 1)
-
-        # 绘制当前正在画的框
+        if event.button() != Qt.LeftButton or not self.drawing:
+            return
+        self.drawing = False
         if self.current_bbox:
             x, y, w, h = self.current_bbox
-            pen = QPen(QColor(255, 0, 0), 2)
-            painter.setPen(pen)
+            if w > 5 and h > 5:
+                norm = self._widget_to_norm(x, y, w, h)
+                if norm is not None:
+                    nx, ny, nw, nh = norm
+                    self.bounding_boxes.append(BoundingBox(nx, ny, nw, nh, 0))
+            self.current_bbox = None
+            self.update()
+
+    # ---------------------------------------------------------- 绘制 ------
+
+    def paintEvent(self, event):
+        # 完全接管绘制 — 不调用 super().paintEvent,避免 QLabel 默认 pixmap 居中干扰坐标
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        # 背景
+        painter.fillRect(self.rect(), QColor(245, 245, 245))
+        if self._pixmap is None or self._pixmap.isNull():
+            return
+        rect = self._display_rect()
+        # 等比缩放绘制 pixmap
+        painter.drawPixmap(rect, self._pixmap)
+        # 已保存的 bbox(从归一化反算到 widget 坐标)
+        for i, bbox in enumerate(self.bounding_boxes):
+            self._draw_bbox(painter, bbox, i + 1, rect)
+        # 当前正在画的 bbox(widget 坐标,直接画)
+        if self.current_bbox:
+            x, y, w, h = self.current_bbox
+            painter.setPen(QPen(QColor(255, 0, 0), 2))
             painter.drawRect(int(x), int(y), int(w), int(h))
 
-    def _draw_bbox(self, painter: QPainter, bbox: BoundingBox, index: int):
-        """绘制单个边界框"""
-        pixmap = self.pixmap()
-        if not pixmap:
+    def _draw_bbox(self, painter: QPainter, bbox: BoundingBox, index: int, rect: QRect):
+        if rect.isEmpty():
             return
-
-        img_w = pixmap.width()
-        img_h = pixmap.height()
-
-        # 转换为像素坐标
-        x = int((bbox.x - bbox.width / 2) * img_w)
-        y = int((bbox.y - bbox.height / 2) * img_h)
-        w = int(bbox.width * img_w)
-        h = int(bbox.height * img_h)
-
-        # 根据类别选择颜色
-        colors = [
-            QColor(0, 255, 0),
-            QColor(255, 0, 0),
-            QColor(0, 0, 255),
-            QColor(255, 255, 0),
-            QColor(255, 0, 255),
-        ]
-        color = colors[bbox.class_id % len(colors)]
-
-        pen = QPen(color, 2)
-        painter.setPen(pen)
+        x = int(rect.x() + (bbox.x - bbox.width / 2) * rect.width())
+        y = int(rect.y() + (bbox.y - bbox.height / 2) * rect.height())
+        w = int(bbox.width * rect.width())
+        h = int(bbox.height * rect.height())
+        color = self.BBOX_COLORS[bbox.class_id % len(self.BBOX_COLORS)]
+        painter.setPen(QPen(color, 2))
         painter.drawRect(x, y, w, h)
-
-        # 绘制标签
         class_name = self.class_names.get(bbox.class_id, f"Class {bbox.class_id}")
         label = f"{index}: {class_name}"
         painter.setPen(QColor(255, 255, 255))
         painter.setFont(QFont("Arial", 10, QFont.Bold))
-        painter.drawText(x + 2, y - 2, label)
+        painter.drawText(x + 2, max(y - 2, 12), label)
 
     def delete_last_bbox(self):
-        """删除最后一个边界框"""
         if self.bounding_boxes:
             self.bounding_boxes.pop()
             self.update()
 
     def clear_all_bboxes(self):
-        """清除所有边界框"""
         self.bounding_boxes = []
         self.update()
 
@@ -439,12 +482,12 @@ class AnnotationWindow(QMainWindow):
         img_path = images_dir / img_file
 
         if img_path.exists():
+            # 直接传原始 pixmap;ImageLabel 会按当前 widget 大小等比适配显示,
+            # 标注用归一化坐标存储,与显示分辨率无关
             pixmap = QPixmap(str(img_path))
-            # 缩放到合适大小
-            scaled_pixmap = pixmap.scaled(800, 600, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.image_label.set_image(scaled_pixmap)
+            self.image_label.set_image(pixmap)
 
-            # 加载标注
+            # 加载标注(归一化坐标,img_width/height 仅为兼容签名传入)
             labels_dir = DatasetPathManager.get_labels_path(self.dataset_name)
             label_file = labels_dir / (img_path.stem + ".txt")
             self.image_label.load_annotations(label_file, pixmap.width(), pixmap.height())
