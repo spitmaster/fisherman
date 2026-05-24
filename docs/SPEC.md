@@ -542,6 +542,48 @@ uv run python main.py
 # 或双击 启动_Fisherman.bat
 ```
 
+### 6.5 未来技术优化点(主动推迟,不是技术债)
+
+下面是评估后**主动选择不做**的优化项,记录在此防止反复讨论。仅当触发条件出现时再回来考虑。
+
+#### 6.5.1 截屏改用 WGC(Windows.Graphics.Capture)
+
+**当前现状**:`recognition/screen_recognition.py` 用 `mss.grab()` 抓屏,5–15 ms/帧。
+
+**WGC 是什么**:Windows 10+ 内置的现代截屏 API,OBS / Discord 等用的同一套。Python 接入有第三方包 `windows-capture`(PyPI)。
+
+**期望收益**:
+
+| 维度 | 现在(mss) | WGC | 增益 |
+|------|---------|-----|------|
+| 抓屏延迟 | 10 ms | **3 ms** | -7 ms |
+| 端到端识别延迟 | 70 ms | ~58 ms | **-17%** |
+| 锁窗口截图(HWND) | ❌ 只能按屏幕坐标矩形 | ✅ 即使窗口移动/被遮挡/最小化都能截到 | 功能性 |
+| 排除自身覆盖物 | ❌ 自己画的红框会被回截 | ✅ 可排除 | 功能性 |
+
+**为什么暂不做**:
+
+- 钓鱼场景需求 ≤ 1 FPS,当前 CPU 推理已达 12–30 FPS,端到端速度**严重过剩**
+- WGC 主要价值在「**功能性**」而非速度 — 当前用户使用模式还没遇到那些痛点
+- 接入成本中等(0.5–1 天):事件驱动回调架构跟当前同步 grab 循环不一致,需重构
+- 跨平台损失:mss 至少能跑 Linux/Mac,WGC 完全 Windows-only(虽然项目已是 Windows-only,但保留了未来可能性)
+
+**何时回来做(触发条件,满足任一即应启动评估)**:
+
+- [ ] 用户反馈「移动 WoW 窗口后识别区域错位」
+- [ ] 实现实时识别框可视化(屏幕画框),需避免自身覆盖物被回截
+- [ ] 多窗口/多角色挂机场景(M5 之后)
+- [ ] 高 FPS 位移跟踪(M4)发现截屏成为新瓶颈
+
+**实施路径(参考)**:
+
+1. `pyproject.toml` 加 `windows-capture` 依赖并锁版本
+2. `recognition/screen_recognition.py` 抽出 `CaptureBackend` 接口,实现 `MssBackend` 和 `WgcBackend` 两个后端
+3. `SettingsTab` 加截屏后端切换开关(默认 WGC 可用则用 WGC,否则回退 mss)
+4. 处理 WGC 回调线程到识别工作线程的桥接(可能用 `queue.Queue` 或 `threading.Event`)
+5. 验证全屏独占模式下兼容性(WoW 经典服可能受影响)
+6. 失败回退策略:WGC 初始化失败 / 三秒无帧 → 自动切 mss
+
 ---
 
 ## 7. 关键流程
