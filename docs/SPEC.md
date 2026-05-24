@@ -442,11 +442,13 @@ if past_center 存在 and distance(current_center, past_center) > threshold:
 
 | 参数 | 默认 | 范围 | UI 控件 |
 |---|---|---|---|
-| `displacement_ratio` | 0.20 | 5–50 % | 「灵敏度」滑块 |
+| `displacement_ratio` | **0.09**(9%) | 5–50 % | 「灵敏度」滑块 |
 | `min_displacement_px` | 5 | 1–30 px | 「最小阈值」滑块 |
-| `window_seconds` | 2.0 | 0.5–10.0 s | 「时间窗口」滑块 |
+| `window_seconds` | **0.5** | 0.5–10.0 s | 「时间窗口」滑块 |
 | `trigger_cooldown_s` | 1.0 | 0–10 s | 「触发冷却」滑块 |
 | `track_timeout_s` | 3.0 | — | 不暴露 |
+
+**默认值调优历史**:9% / 0.5s 是 WoW 钓鱼场景实测最优组合 — 灵敏度太高(>15%)远距离漂动跳不出阈值,太低(<7%)近距离自然漂浮误触发;窗口太长(>1s)咬钩瞬间的快速回弹会被滑动平均掉,太短(<0.3s)YOLO 检测抖动会被放大成假阳。
 
 **典型效果**:
 

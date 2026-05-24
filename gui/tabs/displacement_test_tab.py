@@ -134,12 +134,12 @@ class DisplacementTestTab(QWidget):
         self.disp_slider = QSlider(Qt.Horizontal)
         self.disp_slider.setMinimum(5)
         self.disp_slider.setMaximum(50)
-        self.disp_slider.setValue(20)
+        self.disp_slider.setValue(9)
         self.disp_slider.valueChanged.connect(
             lambda v: self.disp_label.setText(f"{v} %")
         )
         sens_layout.addWidget(self.disp_slider)
-        self.disp_label = QLabel("20 %")
+        self.disp_label = QLabel("9 %")
         self.disp_label.setFixedWidth(60)
         sens_layout.addWidget(self.disp_label)
         disp_layout.addLayout(sens_layout)
@@ -167,12 +167,12 @@ class DisplacementTestTab(QWidget):
         self.window_slider = QSlider(Qt.Horizontal)
         self.window_slider.setMinimum(5)    # 0.5 s（单位 0.1 s）
         self.window_slider.setMaximum(100)  # 10.0 s
-        self.window_slider.setValue(20)     # 2.0 s 默认
+        self.window_slider.setValue(5)      # 0.5 s 默认
         self.window_slider.valueChanged.connect(
             lambda v: self.window_label.setText(f"{v / 10:.1f} s")
         )
         win_layout.addWidget(self.window_slider)
-        self.window_label = QLabel("2.0 s")
+        self.window_label = QLabel("0.5 s")
         self.window_label.setFixedWidth(60)
         win_layout.addWidget(self.window_label)
         disp_layout.addLayout(win_layout)

@@ -67,9 +67,9 @@ class DisplacementTracker:
 
     def __init__(
         self,
-        displacement_ratio: float = 0.2,
+        displacement_ratio: float = 0.09,
         min_displacement_px: float = 5.0,
-        window_seconds: float = 2.0,
+        window_seconds: float = 0.5,
         trigger_cooldown_s: float = 1.0,
         track_timeout_s: float = 3.0,
     ):
