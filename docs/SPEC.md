@@ -132,7 +132,7 @@
 - ⏳ 错误处理与重试
 - ⏳ 自定义脚本沙箱
 
-### 2.8 位移测试标签页(DisplacementTestTab)— ⏳ 待实现
+### 2.8 位移测试标签页(DisplacementTestTab)— ✅ 已完成
 
 **作为** 用户,**我希望** 只有当目标明显移动时才被提醒,**以便** 忽略静止目标的干扰。
 
@@ -140,32 +140,36 @@
 
 **功能点**:
 - F2.8.1 所有识别参数同 RecognitionTestTab(模型/置信度/设备/ROI 区域)
-- F2.8.2 位移阈值配置(滑块,10–300 px,默认 50 px)
-- F2.8.3 时间窗口配置(滑块,0.5–10.0 s,默认 2.0 s)——与 N 秒前位置比较
-- F2.8.4 触发冷却配置(滑块,0–10 s,默认 1.0 s)
-- F2.8.5 实时预览帧仍显示所有检测框(不限于触发目标)
-- F2.8.6 触发时日志区高亮:目标 class + 位移距离 px + 当前坐标
+- F2.8.2 位移参数(详见 §5.5,bbox 自适应):
+  - 灵敏度滑块(5–50 %,默认 **9%**)— 实际阈值 = bbox 对角线 × 该比例
+  - 最小阈值滑块(1–30 px,默认 **5 px**)— 兜底防 YOLO 抖动假阳
+  - 时间窗口滑块(0.5–10.0 s,默认 **0.5 s**)
+  - 触发冷却滑块(0–10 s,默认 1.0 s)
+- F2.8.3 实时预览帧仍显示所有检测框(不限于触发目标)
+- F2.8.4 触发时日志:目标 class + 位移距离/阈值 px + bbox 百分比 + bbox 对角线 + 当前坐标
+- F2.8.5 布局:左右分栏,左侧参数+日志,右侧预览撑满;预览随窗口/分隔条尺寸变化自适应
 
 **验收标准**:
-- [ ] 目标静止不移动 → 不触发
-- [ ] 历史记录不足 window_seconds → 不触发(目标刚出现)
-- [ ] 中心点移动 > threshold 且历史充足 → 触发
-- [ ] 冷却期内不重复触发
+- [x] 目标静止不移动 → 不触发
+- [x] 历史记录不足 window_seconds → 不触发(目标刚出现)
+- [x] 中心点移动 > 自适应阈值 且历史充足 → 触发
+- [x] 冷却期内不重复触发
+- [x] 远距离小目标(bbox 30×30)与近距离大目标(bbox 80×80)用同一组灵敏度参数都能稳定触发
 
-### 2.9 位移操作标签页(DisplacementActionTab)— ⏳ 待实现
+### 2.9 位移操作标签页(DisplacementActionTab)— ✅ 已完成
 
 继承位移测试的位移感知过滤能力,触发时执行用户自定义 Python 脚本(同 RecognitionActionTab 脚本机制)。
 
 **功能点**:
-- F2.9.1 所有参数同 DisplacementTestTab(模型/置信度/设备/ROI/位移阈值/时间窗口/冷却)
+- F2.9.1 所有参数同 DisplacementTestTab(模型/置信度/设备/ROI/灵敏度/最小阈值/时间窗口/冷却,bbox 自适应阈值)
 - F2.9.2 Python 脚本配置区(同 RecognitionActionTab)
-- F2.9.3 脚本内 `detections` 变量只包含触发了位移条件的目标(过滤后列表)
+- F2.9.3 脚本内 `detections` 变量只包含触发了位移条件的目标(过滤后列表),每个元素含:`class_name` / `center` / `confidence` / `bbox` / `displacement_px` / `threshold_px` / `displacement_ratio` / `bbox_diag_px`
 - F2.9.4 统计:识别帧数、位移触发次数、脚本执行次数、FPS
 
 **验收标准**:
-- [ ] 触发条件与 DisplacementTestTab 完全一致
-- [ ] 脚本在后台线程执行,不阻塞识别循环
-- [ ] 脚本内 `print` 走 `QMetaObject.invokeMethod` 线程安全写日志
+- [x] 触发条件与 DisplacementTestTab 完全一致
+- [x] 脚本在后台线程执行,不阻塞识别循环
+- [x] 脚本内 `print` 走 `QMetaObject.invokeMethod` 线程安全写日志
 
 ### 2.10 设置标签页(SettingsTab)— ✅ 已完成
 
