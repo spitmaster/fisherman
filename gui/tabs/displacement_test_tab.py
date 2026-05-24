@@ -393,7 +393,7 @@ class DisplacementTestTab(QWidget):
                     f"置信度: {confidence_threshold:.2f}  |  设备: {device}"
                 )
                 self._append_log(
-                    f"位移阈值: {threshold_px:.0f} px  |  时间窗口: {window_s:.1f} s  |  冷却: {cooldown_s:.1f} s"
+                    f"灵敏度: {displacement_ratio:.0%}  |  最小阈值: {min_displacement_px:.0f} px  |  窗口: {window_s:.1f} s  |  冷却: {cooldown_s:.1f} s"
                 )
                 self._append_log(f"识别区域: {self.area_label.text()}")
                 self._append_log("-" * 80)

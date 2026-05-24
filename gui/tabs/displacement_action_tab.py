@@ -352,7 +352,7 @@ class DisplacementActionTab(QWidget):
                 self.log_text.append(f"[{ts}] 位移操作已启动")
                 self.log_text.append(f"模型: {model_path}  |  设备: {device}")
                 self.log_text.append(
-                    f"位移阈值: {threshold_px:.0f} px  |  窗口: {window_s:.1f} s  |  冷却: {cooldown_s:.1f} s"
+                    f"灵敏度: {displacement_ratio:.0%}  |  最小阈值: {min_displacement_px:.0f} px  |  窗口: {window_s:.1f} s  |  冷却: {cooldown_s:.1f} s"
                 )
                 self.log_text.append("-" * 80)
             else:
