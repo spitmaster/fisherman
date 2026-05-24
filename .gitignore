@@ -57,6 +57,10 @@ runs/
 models/*.pt
 models/*.pth
 
+# 例外:精选可发布的模型(随仓库分发)
+!good_models/*.pt
+!good_models/*.pth
+
 # 数据集
 dataset/
 datasets/
