@@ -10,7 +10,7 @@
 import logging
 from datetime import datetime
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QEvent
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel,
@@ -254,6 +254,8 @@ class DisplacementTestTab(QWidget):
         self.preview_label.setStyleSheet(
             "QLabel { background-color: #1e1e1e; color: #888; border: 1px solid #444; }"
         )
+        # 监听 preview_label 自己的 resize(分隔条拖动也算),保证缓存随时跟实际尺寸一致
+        self.preview_label.installEventFilter(self)
         main_splitter.addWidget(self.preview_label)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
@@ -480,10 +482,14 @@ class DisplacementTestTab(QWidget):
             cx, cy = det.get("center", (0, 0))
             dist = det.get("displacement_px", "?")
             thr = det.get("threshold_px", "?")
+            ratio = det.get("displacement_ratio", 0)
+            diag = det.get("bbox_diag_px", 0)
             cls = det.get("class_name", "unknown")
             conf = float(det.get("confidence", 0))
             self.result_text.append(
-                f"  {cls}  中心({cx:.0f}, {cy:.0f})  位移 {dist}/{thr} px  置信度 {conf:.2%}"
+                f"  {cls}  中心({cx:.0f}, {cy:.0f})  "
+                f"位移 {dist}/{thr} px ({ratio:.0%} of bbox diag {diag} px)  "
+                f"置信度 {conf:.2%}"
             )
         sb = self.result_text.verticalScrollBar()
         sb.setValue(sb.maximum())
@@ -493,12 +499,24 @@ class DisplacementTestTab(QWidget):
         self.preview_label.setPixmap(QPixmap.fromImage(qimg))
 
     def resizeEvent(self, event):
-        """更新供后台线程使用的预览尺寸缓存。"""
+        """更新供后台线程使用的预览尺寸缓存(主窗口缩放走这里)。"""
         super().resizeEvent(event)
-        if hasattr(self, "preview_label"):
+        self._refresh_preview_size_cache()
+
+    def eventFilter(self, obj, event):
+        """监听 preview_label 自己的 resize:覆盖分隔条拖动、子布局变化等
+        tab.resizeEvent 不会触发的场景。
+        """
+        if obj is self.preview_label and event.type() == QEvent.Resize:
+            self._refresh_preview_size_cache()
+        return super().eventFilter(obj, event)
+
+    def _refresh_preview_size_cache(self):
+        if hasattr(self, "preview_label") and self.preview_label is not None:
             sz = self.preview_label.size()
-            self._preview_w = sz.width()
-            self._preview_h = sz.height()
+            if sz.width() > 0 and sz.height() > 0:
+                self._preview_w = sz.width()
+                self._preview_h = sz.height()
 
     def _on_preview_toggled(self, checked: bool):
         if self.recognition and self.recognition.is_running:

@@ -143,9 +143,12 @@ class DisplacementTracker:
                     past = track.pos_at(now - self.window_seconds)
                     dist = math.dist((cx, cy), past) if past else 0.0
                     threshold = self._threshold_px(bw, bh)
+                    diag = math.hypot(bw, bh)
                     enriched = dict(det)
                     enriched["displacement_px"] = round(dist, 1)
                     enriched["threshold_px"] = round(threshold, 1)
+                    enriched["displacement_ratio"] = round(dist / diag, 3) if diag > 0 else 0.0
+                    enriched["bbox_diag_px"] = round(diag, 1)
                     triggered.append(enriched)
 
         # Prune tracks that have not been seen recently
