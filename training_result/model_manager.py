@@ -34,6 +34,10 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 用 glob 扫,符合 Ultralytics 命名规则的都收
 _BUILTIN_MODEL_GLOBS = ("yolov[0-9]*.pt", "yolo1[0-9]*.pt")
 
+# 精选模型目录:开发者人工挑选并入库的"开箱即用"模型,随 git 仓库分发
+# 用户在识别/位移 Tab 的模型下拉框里能直接选,不需要自己训练
+_CURATED_MODELS_DIR = os.path.join(_PROJECT_ROOT, "good_models")
+
 
 class ModelManager:
     """模型管理器"""
@@ -140,6 +144,29 @@ class ModelManager:
             model_info["task_description"] = "Ultralytics 官方 COCO 预训练权重(80 类)"
             model_info["dataset_name"] = "内置预训练 (COCO 80类)"
             self.models.append(model_info)
+
+        # 扫 good_models/ 精选模型目录(随 git 仓库分发的开箱即用模型)
+        if os.path.isdir(_CURATED_MODELS_DIR):
+            for filename in sorted(os.listdir(_CURATED_MODELS_DIR)):
+                if not filename.endswith((".pt", ".pth")):
+                    continue
+                model_path = os.path.join(_CURATED_MODELS_DIR, filename)
+                already_loaded = any(
+                    os.path.abspath(m["path"]) == os.path.abspath(model_path) for m in self.models
+                )
+                if already_loaded:
+                    continue
+                model_info = self._get_model_info(model_path)
+                if not model_info:
+                    continue
+                model_info["version"] = "curated"
+                model_info["is_default"] = False
+                model_info["created_time"] = datetime.fromtimestamp(os.path.getctime(model_path))
+                model_info["training_task_id"] = None
+                model_info["task_name"] = "精选模型"
+                model_info["task_description"] = "随仓库分发的精选模型(good_models/),开箱即用"
+                model_info["dataset_name"] = "精选模型"
+                self.models.append(model_info)
 
         logger.info(f"成功加载 {len(self.models)} 个模型文件")
 

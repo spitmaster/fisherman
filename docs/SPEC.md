@@ -467,6 +467,24 @@ ImageLibraryAlbum (1) ──< (N) ImageLibrary
 - `ModelVersion.is_default` 至多一条为 1,由 `ModelManager.set_default()` 同事务切换
 - 状态字段为字符串枚举,由 `StatusTracker` 保证合法性
 
+### 5.5b 模型来源聚合(ModelManager)
+
+识别测试 / 识别操作 / 位移测试 / 位移操作 四个 Tab 的模型下拉框都通过 `model_manager.get_model_list()` 取数,后者扫描以下四个来源,在内存里合并去重(按绝对路径)。
+
+| 来源 | 物理位置 | `version` 字段 | `dataset_name` 显示 | 是否随 git 仓库分发 |
+|------|---------|--------------|------------------|:---:|
+| **训练产出** | `training_result/<task>/weights/best.pt`(DB 注册) | `1.0` / `2.0` / ... | 训练集名 | ❌ |
+| **手动导入** | `models/*.pt`(用户拖入) | `manual` | `手动导入` | ❌ |
+| **内置预训练** | 项目根 `yolov8n.pt` / `yolo11n.pt` 等 | `builtin` | `内置预训练 (COCO 80类)` | ✅ |
+| **精选模型** | `good_models/*.pt` | `curated` | `精选模型` | ✅ |
+
+**精选模型(`good_models/`)的语义**:开发者人工挑选并入库的"开箱即用"模型。**全部 Tab 自动可见**,用户安装项目后无需任何训练即可直接用。当前已收录:`good_models/wow_fish.pt`(鱼漂识别)。
+
+新增精选模型的流程:
+1. 把 `.pt` 文件放进 `good_models/`
+2. `git add good_models/<name>.pt`(`.gitignore` 已设例外允许)
+3. commit + push,所有用户拉取代码即可使用
+
 ### 5.6 关键目录结构
 
 ```
@@ -475,7 +493,9 @@ fisherman/
 ├── 启动_Fisherman.bat             Windows 启动器
 ├── pyproject.toml + uv.lock      依赖管理
 ├── fisherman.db                  SQLite(运行期产生)
-├── yolov8n.pt                    YOLOv8 预训练权重
+├── yolov8n.pt                    YOLOv8 预训练权重(内置,COCO 80 类)
+├── good_models/                  精选模型目录(随仓库分发,开箱即用)
+│   └── wow_fish.pt               鱼漂识别精选模型
 │
 ├── global_support/               全局支撑
 ├── gui/                          PyQt5 GUI
