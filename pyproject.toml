@@ -24,6 +24,12 @@ dependencies = [
     "keyboard>=0.13.5",
 ]
 
+[dependency-groups]
+# 仅打包 standalone exe 时需要;运行时不依赖,避免污染最终发布体积
+build = [
+    "pyinstaller>=6.0.0",
+]
+
 [tool.uv]
 package = false
 

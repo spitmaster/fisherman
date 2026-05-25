@@ -1,5 +1,13 @@
-"""钓鱼自动化模块。详见 docs/SPEC.md §2.14 / §5.5c。"""
+"""钓鱼自动化模块。详见 docs/SPEC.md §2.14 / §5.5c / §2.15。"""
 
+from .constants import (
+    BUNDLED_MODEL_FILENAME,
+    BUNDLED_MODEL_SUBDIR,
+    LIBRARY_HOTKEYS,
+    STANDALONE_ENV_FLAG,
+    is_standalone_mode,
+    resolve_bundled_model_path,
+)
 from .fishing_loop import (
     DEFAULT_CAST_KEY,
     DEFAULT_DETECT_TIMEOUT_S,
@@ -32,4 +40,11 @@ __all__ = [
     "DEFAULT_WAIT_LAND_S",
     "DEFAULT_DETECT_TIMEOUT_S",
     "DEFAULT_POST_TRIGGER_WAIT_S",
+    # constants
+    "LIBRARY_HOTKEYS",
+    "BUNDLED_MODEL_FILENAME",
+    "BUNDLED_MODEL_SUBDIR",
+    "STANDALONE_ENV_FLAG",
+    "is_standalone_mode",
+    "resolve_bundled_model_path",
 ]

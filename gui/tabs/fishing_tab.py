@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 )
 
 from fishing import (
+    BUNDLED_MODEL_FILENAME,
     DEFAULT_CAST_KEY,
     DEFAULT_DETECT_TIMEOUT_S,
     DEFAULT_POST_TRIGGER_WAIT_S,
@@ -33,27 +34,22 @@ from fishing import (
     FishingLoop,
     FishingState,
     FishingStats,
+    LIBRARY_HOTKEYS,
     STATE_LABEL,
+    is_standalone_mode,
+    resolve_bundled_model_path,
 )
 from global_support.device_resolver import device_display_name, get_available_devices
 from gui.screen_area_selector import ScreenAreaSelector
-from gui.tabs.image_library_tab import ImageLibraryTab
-from training_result.model_manager import model_manager
 
 logger = logging.getLogger(__name__)
 
-
-# 与图库 F8/F9 冲突的拒绝列表(SPEC §2.14 F2.14.3)
-LIBRARY_HOTKEYS = {
-    ImageLibraryTab.DEFAULT_HOTKEY.lower(),
-    ImageLibraryTab.FIXED_HOTKEY.lower(),
-}
 
 DEFAULT_START_HOTKEY = "f11"
 DEFAULT_STOP_HOTKEY = "f12"
 
 # 默认模型优先选 wow_fish.pt(精选模型,M5 主用)
-PREFERRED_DEFAULT_MODEL = "wow_fish.pt"
+PREFERRED_DEFAULT_MODEL = BUNDLED_MODEL_FILENAME
 
 
 class FishingTab(QWidget):
@@ -472,9 +468,30 @@ class FishingTab(QWidget):
     # ------------------------------------------------------------------
 
     def _load_models(self) -> None:
+        """加载模型列表。
+
+        - **standalone 模式**(独立 exe):跳过 `model_manager`(不连 DB / 不扫
+          `training_result/` / `models/`),只把 `good_models/wow_fish.pt`
+          作为唯一选项,UI 上下拉显示但锁死
+        - **完整 app 模式**:走原来的 `model_manager.get_model_list()`,扫训练 +
+          手动导入 + 内置预训练 + 精选模型
+        """
+        self.model_combo.clear()
+        if is_standalone_mode():
+            bundled = resolve_bundled_model_path()
+            if bundled:
+                self.model_combo.addItem(BUNDLED_MODEL_FILENAME, bundled)
+                self.model_combo.setCurrentIndex(0)
+                self.model_combo.setEnabled(False)   # standalone 锁死,无别的可选
+                logger.info("standalone 模式加载内置模型: %s", bundled)
+            else:
+                logger.error("standalone 模式找不到内置模型 %s", BUNDLED_MODEL_FILENAME)
+            return
+
         try:
+            # 延迟 import,避免 standalone 打包时把 training_result / db_manager 拖入
+            from training_result.model_manager import model_manager
             models = model_manager.get_model_list()
-            self.model_combo.clear()
             default_idx = 0
             for idx, m in enumerate(models):
                 self.model_combo.addItem(m["filename"], m["path"])

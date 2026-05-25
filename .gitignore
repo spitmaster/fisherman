@@ -97,6 +97,10 @@ env/
 build/
 dist/
 
+# 例外:M6 钓鱼独立 exe 的 PyInstaller spec 是核心交付物,必须入版本控制
+# (详见 docs/standalone-build.md)
+!fishing_standalone.spec
+
 # Jupyter Notebook
 *.ipynb_checkpoints/
 
