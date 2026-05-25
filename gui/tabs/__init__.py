@@ -12,6 +12,7 @@ from .recognition_action_tab import RecognitionActionTab
 from .displacement_test_tab import DisplacementTestTab
 from .displacement_action_tab import DisplacementActionTab
 from .image_library_tab import ImageLibraryTab
+from .fishing_tab import FishingTab
 from .settings_tab import SettingsTab
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     'DisplacementTestTab',
     'DisplacementActionTab',
     'ImageLibraryTab',
+    'FishingTab',
     'SettingsTab',
 ]

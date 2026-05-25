@@ -20,7 +20,7 @@ from gui.tabs import (
     TrainingTab, TrainingResultTab, RecognitionTab,
     RecognitionTestTab, RecognitionActionTab,
     DisplacementTestTab, DisplacementActionTab,
-    ImageLibraryTab, SettingsTab,
+    ImageLibraryTab, FishingTab, SettingsTab,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,9 @@ class MainWindow(QMainWindow):
 
         self.displacement_action_tab = DisplacementActionTab()
         self.tabs.addTab(self.displacement_action_tab, "位移操作")
+
+        self.fishing_tab = FishingTab()
+        self.tabs.addTab(self.fishing_tab, "钓鱼")
 
         self.settings_tab = SettingsTab()
         self.tabs.addTab(self.settings_tab, "设置")
@@ -194,6 +197,10 @@ class MainWindow(QMainWindow):
             self.displacement_test_tab.close()
         if hasattr(self, 'displacement_action_tab'):
             self.displacement_action_tab.close()
+
+        # 停止钓鱼 Tab(注销热键 + 停循环线程)
+        if hasattr(self, 'fishing_tab'):
+            self.fishing_tab.close()
 
         # 停止所有任务（原有的识别管理器）
         if recognition_manager.is_recognition_active():
