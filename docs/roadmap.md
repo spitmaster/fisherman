@@ -14,7 +14,19 @@
 
 ## 进行中
 
-> M5 已完结(2026-05-25 用户实测通过)。等下一个里程碑启动。
+### M6 钓鱼独立 exe 打包 🚧 设计阶段(2026-05-25 启动)
+
+**背景**:M5 完结后钓鱼功能稳定,用户希望把这一个 Tab 单独打包成 exe 文件夹分发给朋友(不需要装 Python / 训练环境)。复用 FishingTab + FishingLoop,新建极简入口 + PyInstaller onedir 配置。
+
+**设计落点**:SPEC [§2.15 StandaloneFishing](./SPEC.md#215-钓鱼独立-exe-打包standalonefishing--待开发m6)。
+**详情**:[milestones/20260204.md#m6--钓鱼独立-exe-打包--设计阶段](./milestones/20260204.md)。
+
+- 模型固定 `good_models/wow_fish.pt`,不读 DB,不允许外挂
+- 保留位移区域选择(`gui/screen_area_selector.py`)
+- PyInstaller onedir 模式 + zip 分发(冷启动 2-3s,杀软误报少)
+- exe 名 `fisherman_fishing.exe`
+- 暂用默认图标 / 无启动闪屏
+- 干净 Windows 实测通过 → 完结
 
 ---
 
@@ -34,6 +46,7 @@
 ## 非目标(明确不做)
 
 参见 [SPEC.md §1.3](./SPEC.md#13-非目标non-goals):
+
 - ❌ Web / 云端推理服务
 - ❌ 分布式训练
 - ❌ 从零开始的模型结构设计

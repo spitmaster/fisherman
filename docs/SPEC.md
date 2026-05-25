@@ -327,6 +327,62 @@
 - [ ] 连续 10 轮无意外中断(实测验收)
 - [ ] WoW 全屏运行时热键仍能拦截到(`keyboard` 库已验证支持)
 
+### 2.15 钓鱼独立 exe 打包(StandaloneFishing)— ⏳ 待开发(M6)
+
+**作为** WoW 玩家,**我希望** 把钓鱼功能单独打包成 `.exe` 文件夹分发给朋友,**以便** 他们不需要安装 Python / 训练环境直接双击使用。
+
+**整体设计**:复用 [§2.14 FishingTab](#214-钓鱼标签页fishingtab-已完成m5) + `fishing/fishing_loop.py`,去掉训练 / 图库 / 识别测试 / 设置等无关 Tab,新建极简入口 `fishing_main.py` 仅挂 FishingTab。打包工具用 PyInstaller(项目已用 `Fisherman.spec`),onedir 模式分发,zip 整个 `dist/fisherman_fishing/` 文件夹给最终用户。
+
+**Scope 收口(2026-05-25 用户拍板)**:
+
+| # | 决策 | 选择 |
+|---|------|------|
+| S1 | 模型来源 | **固定** `good_models/wow_fish.pt`(不允许用户外挂、不读 DB / `models/` / `training_result/`) |
+| S2 | 位移检测区域选择 | **保留**(用 `gui/screen_area_selector.py`,跨虚拟屏) |
+| S3 | 打包模式 | **onedir 单目录** + zip 分发(冷启动 ~2-3s vs onefile ~10-15s;杀软误报少) |
+| S4 | exe 文件名 | `fisherman_fishing.exe` |
+| S5 | 图标 / 启动闪屏 | 暂用 PyInstaller 默认图标 / 无闪屏(后续按需补) |
+
+**功能点**:
+
+- F2.15.1 **入口** `fishing_main.py`:极简 MainWindow,只挂 FishingTab + 状态栏。无菜单、无日志按钮、无其他 Tab
+- F2.15.2 **模型加载固定**:FishingTab 在打包模式下不调 `model_manager.get_model_list()`,改为直接读 `<exe同目录>/good_models/wow_fish.pt`。检测路径:开发环境用 `os.path.dirname(__file__)`,exe 环境用 `sys._MEIPASS` 或 exe 同级
+- F2.15.3 **解耦 ImageLibraryTab**:抽出 `fishing/constants.py` 存放「不可与 F8/F9 同键」的常量,FishingTab 改 import 此常量,**不再 import ImageLibraryTab**(避免链式拖入 image_library / db_manager / library_manager)
+- F2.15.4 **解耦 model_manager / database**:FishingTab 不再 import `training_result.model_manager`;model_combo 在 standalone 模式下隐藏或锁死显示「wow_fish.pt」,模型路径硬编码
+- F2.15.5 **PyInstaller spec** `fishing_standalone.spec`:
+  - mode = onedir,exe name = `fisherman_fishing`
+  - datas:`good_models/wow_fish.pt` → `good_models/`
+  - hidden imports:`torch`、`ultralytics`、`cv2`、`mss`、`pyautogui`、`keyboard`、`PyQt5.sip`
+  - excludes:`training`、`training_result`、`image_library`、`global_support.database`、`global_support.task_scheduler`、`gui.tabs.training_tab` 等所有无关模块,显著减小体积
+- F2.15.6 **目录结构**:`dist/fisherman_fishing/` 内含 `fisherman_fishing.exe` + 几百个 dll/pyd + `good_models/wow_fish.pt`。整体大小目标 < 1 GB
+- F2.15.7 **构建脚本** `build_standalone.bat`:封装 `uv run pyinstaller fishing_standalone.spec --noconfirm`,清理上次 `build/` + `dist/`
+- F2.15.8 **README** `docs/standalone-build.md`:写清楚如何构建 / 如何分发 / 用户使用注意(F11/F12 不冲突 / 副屏游戏要选区域 / Windows Defender 误报对策)
+
+**验收标准**:
+
+- [ ] PyInstaller 构建无错误,产物在 `dist/fisherman_fishing/`
+- [ ] dist 文件夹双击 `fisherman_fishing.exe` GUI 能启动
+- [ ] 启动日志确认模型从 `good_models/wow_fish.pt` 加载成功
+- [ ] 整个钓鱼闭环可用:F11 启动 → 抛竿 → 位移检测 → 右键拾取 → F12 停止
+- [ ] 实时预览正常,无黑屏
+- [ ] 区域选择跨屏正常(主屏/副屏都能选)
+- [ ] 在**干净 Windows**(无 Python 环境的另一台机器)能跑通
+- [ ] dist 整体大小 < 1 GB(zip 压缩后通常 ~300-500 MB)
+
+**非目标**:
+
+- ❌ 自动更新机制
+- ❌ macOS / Linux 打包(SPEC §3.4 已声明未正式测试)
+- ❌ 代码签名 / 公证(开发者朋友自用规模无需)
+- ❌ 安装程序(NSIS / Inno Setup)— 用户直接解压 zip 用
+
+**架构不变量校验**:
+
+- [x] 不变量 5(uv.lock 锁定):PyInstaller 在 `uv venv` 内跑,使用锁定依赖
+- [x] 不变量 6(CPU 推理):排除 `torch.cuda` 相关二进制(PyTorch CPU wheel 本来就不带 CUDA)
+- [x] 不变量 7(logging 优先):新代码全 logging
+- [x] 不变量 2(UI 线程安全):打包不改变线程模型,沿用 FishingTab 现有信号槽
+
 ---
 
 ## 3. 非功能需求
@@ -920,6 +976,7 @@ MainWindow.closeEvent:
 
 | 日期 | 版本 | 改动 |
 |------|------|------|
+| 2026-05-25 | v1.6 | M6 🚧 启动(设计阶段):新增 §2.15 StandaloneFishing(钓鱼独立 exe 打包)。Scope 5 项 S1-S5 拍板:模型固定 `wow_fish.pt` / 保留区域选择 / onedir / `fisherman_fishing.exe` / 默认图标无闪屏。等用户审过设计后开工 `fishing_main.py` + `fishing_standalone.spec` |
 | 2026-05-25 | v1.5 | M5 ✅ 完结:`fishing/fishing_loop.py` + `gui/tabs/fishing_tab.py` 落地并实测通过;默认值同步实测最优(预备 5s / 抛竿 `-` / 抛竿后 3s / 检测超时 17s);修双屏 click 偏移 bug(`+ monitor_area offset`);右下日志窗换为实时预览(识别管线常驻全程,后台线程图像处理 + 主线程 setPixmap);§2.14 ⏳ → ✅、§6.1 fishing 0% → ~95% |
 | 2026-05-25 | v1.4 | M5 设计:新增 §2.14 FishingTab(死循环钓鱼:预备 → 前准备 → 抛竿 → 等待 → 位移检测 → 拾取 → 后处理)、§5.5c FishingLoop 状态机与线程模型、§4.1 Tab 列表加 FishingTab、§6.1 完成度加 fishing 行 |
 | 2026-05-22 | v1.3 | M3 图库重构:§2.13 引入「图集」概念(左右两栏 UI + 图集 CRUD + 默认图集)、§4.1 ImageLibraryTab 提为第一个 Tab、§5.6 新增 `image_library_albums` 表 + `image_library.album_id` FK |
