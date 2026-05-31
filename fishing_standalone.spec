@@ -120,6 +120,11 @@ hiddenimports = [
     "mss",
     "pyautogui",
     "keyboard",
+    # M7 后台钓鱼(SPEC §2.15 F2.15.9):窗口捕获后端 + 窗口内框选对话框。
+    # 二者经 FishingTab / screen_recognition 顶层 import 本会被静态分析带入,
+    # 这里显式声明做保险,并确保不被上方 excludes 的 recognition/gui 通配误伤。
+    "recognition.window_io",
+    "gui.window_region_selector",
 ]
 
 # ----------------------------------------------------------------------------

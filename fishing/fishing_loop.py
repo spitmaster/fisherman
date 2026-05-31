@@ -25,6 +25,7 @@ from typing import Callable, Optional, Tuple
 
 import pyautogui
 
+from recognition import window_io
 from recognition.displacement_tracker import DisplacementTracker
 from recognition.screen_recognition import ScreenRecognition
 
@@ -98,6 +99,15 @@ class FishingConfig:
     device: str = "cpu"
     # (x, y, w, h) 屏幕绝对坐标,None=全屏
     monitor_area: Optional[Tuple[int, int, int, int]] = None
+
+    # 操作模式(M7 后台钓鱼):
+    #   "screen" — 前台:mss 抓屏 + pyautogui 投键鼠(现状,游戏须前台)
+    #   "window" — 后台:window_io 抓窗口 + PostMessage 投键鼠(游戏可后台/被遮挡)
+    capture_mode: str = "screen"
+    hwnd: int = 0                                # 后台模式初始窗口句柄(UI 选中时记)
+    window_title: str = ""                       # 后台模式窗口标题(运行时按它重解析 hwnd)
+    # (x, y, w, h) 客户区相对子区域,None=整个客户区(仅 window 模式)
+    window_region: Optional[Tuple[int, int, int, int]] = None
 
     prepare_wait_s: float = DEFAULT_PREPARE_WAIT_S
     pre_action_key: str = ""        # 空 = 跳过
@@ -181,6 +191,9 @@ class FishingLoop:
         self._recognition: Optional[ScreenRecognition] = None
         self._tracker: Optional[DisplacementTracker] = None
 
+        # 后台模式运行时解析出的窗口句柄(随游戏重启变化,按 window_title 重解析)
+        self._hwnd: int = config.hwnd
+
         # 触发结果(由 ScreenRecognition 推理线程写、主循环读)
         self._triggered_target: Optional[dict] = None
         self._trigger_lock = threading.Lock()
@@ -239,6 +252,10 @@ class FishingLoop:
             self._ensure_recognition_started()
 
             while not self._stop_flag.is_set():
+                # 后台模式:每轮开头确认游戏窗口还在(关闭/重启则 hwnd 失效)
+                if not self._check_window_alive():
+                    break
+
                 self._round_idx += 1
                 self.stats.rounds += 1
 
@@ -354,14 +371,26 @@ class FishingLoop:
         center = target.get("center", (0, 0))
         try:
             cx, cy = int(center[0]), int(center[1])
-            # 关键:detection 的 center 是图像局部坐标(相对截图左上角),
-            # 选区识别时必须加 monitor_area 的 (x, y) 偏移才是屏幕绝对坐标。
-            # 双屏场景下,monitor_area 在副屏时偏移可能 >= 1920,无此修正会点到主屏错误位置。
-            if self.config.monitor_area is not None:
-                cx += int(self.config.monitor_area[0])
-                cy += int(self.config.monitor_area[1])
-            pyautogui.rightClick(cx, cy)
-            logger.info("右键拾取 @(%d, %d)  target_center_local=%s", cx, cy, center)
+            if self.config.capture_mode == "window":
+                # 后台:detection.center 是「喂给 YOLO 的帧」局部坐标(整窗客户区,或子区域)。
+                # 子区域模式 + 子区域偏移 = 客户区坐标;整窗则偏移 0。
+                # 抓帧已裁剪掉标题栏(window_io 客户区对齐),故无竖直偏移。
+                if self.config.window_region is not None:
+                    cx += int(self.config.window_region[0])
+                    cy += int(self.config.window_region[1])
+                window_io.post_right_click(self._hwnd, cx, cy)
+                logger.info(
+                    "后台右键拾取 @客户区(%d, %d)  hwnd=0x%08X  center_local=%s",
+                    cx, cy, self._hwnd, center,
+                )
+            else:
+                # 前台:detection.center 是截图局部坐标;选区识别须 + monitor_area 偏移
+                # 才是屏幕绝对坐标(双屏副屏偏移可能 >= 1920,无此修正会点错屏)。
+                if self.config.monitor_area is not None:
+                    cx += int(self.config.monitor_area[0])
+                    cy += int(self.config.monitor_area[1])
+                pyautogui.rightClick(cx, cy)
+                logger.info("右键拾取 @(%d, %d)  target_center_local=%s", cx, cy, center)
         except Exception as e:
             logger.error("右键拾取失败 @%s: %s", center, e)
             if self.on_error:
@@ -400,7 +429,15 @@ class FishingLoop:
         if not key:
             return
         try:
-            pyautogui.press(key)
+            if self.config.capture_mode == "window":
+                # 后台:PostMessage 投键到窗口句柄,不抢焦点
+                ok = window_io.post_key(self._hwnd, key)
+                if not ok:
+                    logger.error("后台投键 %r 失败(hwnd=0x%08X)", key, self._hwnd)
+                    if self.on_error:
+                        self.on_error(f"后台投键 {key!r} 失败")
+            else:
+                pyautogui.press(key)
         except Exception as e:
             logger.error("按键 %r 失败: %s", key, e)
             if self.on_error:
@@ -443,13 +480,55 @@ class FishingLoop:
             if self.on_frame is not None:
                 self._recognition.on_frame_result = self.on_frame
 
-        if self.config.monitor_area:
+        if self.config.capture_mode == "window":
+            # 后台模式:先解析 hwnd(按标题,容忍游戏重启换句柄),配置窗口捕获
+            self._resolve_hwnd()
+            self._recognition.set_window_capture(self._hwnd, self.config.window_region)
+        elif self.config.monitor_area:
             self._recognition.set_monitor_area(*self.config.monitor_area)
         else:
             self._recognition.use_full_screen_monitor()
 
         if not self._recognition.is_running:
             self._recognition.start_recognition()
+
+    def _resolve_hwnd(self) -> int:
+        """后台模式:按窗口标题重解析 hwnd(句柄随游戏重启变化);
+        标题为空则沿用初始 config.hwnd。返回解析结果(可能 0=找不到)。"""
+        hwnd = self.config.hwnd
+        if self.config.window_title:
+            found = window_io.find_window(self.config.window_title)
+            if found:
+                hwnd = found
+        self._hwnd = hwnd
+        return hwnd
+
+    def _check_window_alive(self) -> bool:
+        """后台模式每轮校验目标窗口存活;前台模式恒 True。
+        窗口丢失(关闭/重启解析不到)→ on_error + 返回 False 让主循环退出(F2.16.7)。"""
+        if self.config.capture_mode != "window":
+            return True
+
+        hwnd = self._resolve_hwnd()
+        if not window_io.is_window(hwnd):
+            msg = f"游戏窗口丢失({self.config.window_title or hex(self.config.hwnd)})"
+            logger.warning(msg)
+            if self.on_error:
+                self.on_error(msg)
+            return False
+
+        if window_io.is_minimized(hwnd):
+            # 最小化 = 系统停渲,抓不到画面。明确报错引导,而非静默空转。
+            msg = "游戏窗口已最小化,无法后台捕获;请勿最小化,改用遮挡 / 虚拟桌面 / 移到屏幕外"
+            logger.warning(msg)
+            if self.on_error:
+                self.on_error(msg)
+            return False
+
+        # 重解析后句柄变了(游戏重启)→ 同步给识别管线,继续钓
+        if self._recognition is not None and self._recognition.hwnd != hwnd:
+            self._recognition.set_window_capture(hwnd, self.config.window_region)
+        return True
 
     def _teardown_recognition(self) -> None:
         if self._recognition is not None and self._recognition.is_running:

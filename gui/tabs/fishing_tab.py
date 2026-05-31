@@ -18,7 +18,7 @@ from typing import Optional
 from PyQt5.QtCore import Qt, QEvent, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
+    QComboBox, QDialog, QDoubleSpinBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QMessageBox, QPushButton, QScrollArea, QSizePolicy,
     QSlider, QSplitter, QVBoxLayout, QWidget,
 )
@@ -41,6 +41,8 @@ from fishing import (
 )
 from global_support.device_resolver import device_display_name, get_available_devices
 from gui.screen_area_selector import ScreenAreaSelector
+from gui.window_region_selector import WindowRegionSelector
+from recognition import window_io
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +70,13 @@ class FishingTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._loop: Optional[FishingLoop] = None
-        self._monitor_area: Optional[tuple] = None  # (x, y, w, h)
+        self._monitor_area: Optional[tuple] = None  # (x, y, w, h) 前台模式屏幕绝对
         self._selector: Optional[ScreenAreaSelector] = None
+
+        # 后台模式(M7)状态
+        self._hwnd: int = 0
+        self._window_title: str = ""
+        self._window_region: Optional[tuple] = None  # (x, y, w, h) 客户区相对,None=整窗
 
         # 当前注册到 keyboard 库的实际字符串(便于 stop 时 remove)
         self._registered_start: str = ""
@@ -154,23 +161,73 @@ class FishingTab(QWidget):
         row.addStretch()
         layout.addLayout(row)
 
-        # 检测区域
+        # 操作模式(M7 后台钓鱼):前台(屏幕)/ 后台(窗口)
         row = QHBoxLayout()
-        row.addWidget(QLabel("位移检测区域:"))
+        row.addWidget(QLabel("操作模式:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("前台(屏幕)", "screen")
+        if window_io.is_supported():
+            self.mode_combo.addItem("后台(窗口)", "window")
+        self.mode_combo.setToolTip(
+            "前台:游戏须在最前、占用鼠标键盘(M5 现状)\n"
+            "后台:抓指定窗口画面 + 投递键鼠,游戏可后台/被遮挡,鼠标键盘自由"
+        )
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        row.addWidget(self.mode_combo)
+        self.mode_hint = QLabel("")
+        self.mode_hint.setStyleSheet("QLabel { color: #888; font-size: 11px; }")
+        row.addWidget(self.mode_hint)
+        row.addStretch()
+        layout.addLayout(row)
+
+        # 前台:屏幕区域容器
+        self.screen_area_widget = QWidget()
+        sa = QHBoxLayout(self.screen_area_widget)
+        sa.setContentsMargins(0, 0, 0, 0)
+        sa.addWidget(QLabel("位移检测区域:"))
         self.btn_select_area = QPushButton("选择区域")
         self.btn_select_area.setToolTip(
             "多屏用户必看:游戏在副屏时务必用此按钮框选游戏窗口,「全屏」只截主显示器"
         )
         self.btn_select_area.clicked.connect(self._select_screen_area)
-        row.addWidget(self.btn_select_area)
+        sa.addWidget(self.btn_select_area)
         self.btn_reset_area = QPushButton("全屏(主显示器)")
         self.btn_reset_area.setToolTip("仅截主显示器;副屏游戏请用「选择区域」")
         self.btn_reset_area.clicked.connect(self._reset_area)
-        row.addWidget(self.btn_reset_area)
+        sa.addWidget(self.btn_reset_area)
         self.area_label = QLabel("全屏(主显示器)")
-        row.addWidget(self.area_label)
-        row.addStretch()
-        layout.addLayout(row)
+        sa.addWidget(self.area_label)
+        sa.addStretch()
+        layout.addWidget(self.screen_area_widget)
+
+        # 后台:游戏窗口 + 窗口内检测区域容器
+        self.window_widget = QWidget()
+        wl = QHBoxLayout(self.window_widget)
+        wl.setContentsMargins(0, 0, 0, 0)
+        wl.addWidget(QLabel("游戏窗口:"))
+        self.window_combo = QComboBox()
+        self.window_combo.setMinimumWidth(280)
+        self.window_combo.currentIndexChanged.connect(self._on_window_combo_changed)
+        wl.addWidget(self.window_combo)
+        self.btn_refresh_windows = QPushButton("🔄")
+        self.btn_refresh_windows.setFixedWidth(36)
+        self.btn_refresh_windows.setToolTip("刷新窗口列表")
+        self.btn_refresh_windows.clicked.connect(self._refresh_windows)
+        wl.addWidget(self.btn_refresh_windows)
+        wl.addSpacing(12)
+        wl.addWidget(QLabel("检测区域:"))
+        self.btn_pick_window_region = QPushButton("窗口内框选")
+        self.btn_pick_window_region.setToolTip("抓一帧游戏画面,在上面拖出检测子区域(可减少误触发)")
+        self.btn_pick_window_region.clicked.connect(self._pick_window_region)
+        wl.addWidget(self.btn_pick_window_region)
+        self.btn_reset_window_region = QPushButton("整窗")
+        self.btn_reset_window_region.clicked.connect(self._reset_window_region)
+        wl.addWidget(self.btn_reset_window_region)
+        self.window_region_label = QLabel("整窗")
+        wl.addWidget(self.window_region_label)
+        wl.addStretch()
+        layout.addWidget(self.window_widget)
+        self.window_widget.setVisible(False)  # 默认前台
 
         return group
 
@@ -544,6 +601,69 @@ class FishingTab(QWidget):
         self.area_label.setText("全屏(主显示器)")
 
     # ------------------------------------------------------------------
+    # 后台模式(M7):窗口选择 + 窗口内检测区域
+    # ------------------------------------------------------------------
+
+    def _on_mode_changed(self) -> None:
+        mode = self.mode_combo.currentData()
+        is_bg = mode == "window"
+        self.screen_area_widget.setVisible(not is_bg)
+        self.window_widget.setVisible(is_bg)
+        if is_bg:
+            self.mode_hint.setText("游戏需窗口化/无边框;勿最小化(改用遮挡/虚拟桌面);后台保持渲染设 /console maxfpsbk 30")
+            if self.window_combo.count() == 0:
+                self._refresh_windows()
+        else:
+            self.mode_hint.setText("")
+
+    def _refresh_windows(self) -> None:
+        self.window_combo.blockSignals(True)
+        self.window_combo.clear()
+        wins = window_io.enum_windows()
+        for hwnd, title in wins:
+            disp = title if len(title) <= 50 else title[:47] + "…"
+            self.window_combo.addItem(disp, (hwnd, title))
+        self.window_combo.blockSignals(False)
+        # 优先自动选中含「魔兽/wow/warcraft」的窗口
+        for i in range(self.window_combo.count()):
+            if any(k in self.window_combo.itemText(i).lower()
+                   for k in ("魔兽", "wow", "warcraft")):
+                self.window_combo.setCurrentIndex(i)
+                break
+        self._on_window_combo_changed()
+
+    def _on_window_combo_changed(self) -> None:
+        data = self.window_combo.currentData()
+        if data:
+            self._hwnd, self._window_title = data
+        else:
+            self._hwnd, self._window_title = 0, ""
+        # 换窗口后旧子区域作废(坐标系不同)
+        self._window_region = None
+        self.window_region_label.setText("整窗")
+
+    def _pick_window_region(self) -> None:
+        if not self._hwnd:
+            QMessageBox.warning(self, "提示", "请先选择游戏窗口")
+            return
+        try:
+            dlg = WindowRegionSelector(self._hwnd, parent=self)
+            if dlg.exec_() == QDialog.Accepted:
+                self._window_region = dlg.result_region
+                if self._window_region is None:
+                    self.window_region_label.setText("整窗")
+                else:
+                    x, y, w, h = self._window_region
+                    self.window_region_label.setText(f"({x},{y}) {w}×{h}")
+        except Exception as e:
+            logger.error("窗口内框选失败: %s", e)
+            QMessageBox.critical(self, "错误", f"窗口内框选失败: {e}")
+
+    def _reset_window_region(self) -> None:
+        self._window_region = None
+        self.window_region_label.setText("整窗")
+
+    # ------------------------------------------------------------------
     # 热键
     # ------------------------------------------------------------------
 
@@ -649,11 +769,25 @@ class FishingTab(QWidget):
             QMessageBox.warning(self, "提示", "请先选择模型")
             return
 
+        mode = self.mode_combo.currentData()
+        if mode == "window":
+            if not self._hwnd:
+                QMessageBox.warning(self, "提示", "后台模式请先选择游戏窗口")
+                return
+            if not window_io.is_window(self._hwnd):
+                QMessageBox.warning(self, "提示", "所选游戏窗口已失效,请点🔄刷新重选")
+                return
+
         config = FishingConfig(
             model_path=self.model_combo.currentData(),
             confidence=self.conf_slider.value() / 100.0,
             device=self.device_combo.currentData() or "cpu",
-            monitor_area=self._monitor_area,
+            # 前台用屏幕选区;后台不用 monitor_area
+            monitor_area=None if mode == "window" else self._monitor_area,
+            capture_mode=mode,
+            hwnd=self._hwnd if mode == "window" else 0,
+            window_title=self._window_title if mode == "window" else "",
+            window_region=self._window_region if mode == "window" else None,
             prepare_wait_s=self.prepare_spin.value(),
             pre_action_key=self.pre_action_edit.text().strip().lower(),
             cast_key=cast_key,
@@ -738,8 +872,15 @@ class FishingTab(QWidget):
     def _on_triggered_main(self, det: dict) -> None:
         cls = det.get("class_name", "?")
         local_cx, local_cy = det.get("center", (0, 0))
-        # 转屏幕绝对坐标(选区识别时 + 偏移),与 FishingLoop._do_pick_up 保持一致
-        if self._monitor_area is not None:
+        # 坐标显示与 FishingLoop._do_pick_up 的换算保持一致
+        if self.mode_combo.currentData() == "window":
+            # 后台:center 是客户区(或子区域)局部坐标,+ 子区域偏移 = 客户区坐标
+            cx, cy = int(local_cx), int(local_cy)
+            if self._window_region is not None:
+                cx += int(self._window_region[0])
+                cy += int(self._window_region[1])
+            coord_str = f"客户区({cx},{cy})"
+        elif self._monitor_area is not None:
             abs_cx = int(local_cx) + int(self._monitor_area[0])
             abs_cy = int(local_cy) + int(self._monitor_area[1])
             coord_str = f"屏幕({abs_cx},{abs_cy})"
@@ -821,7 +962,10 @@ class FishingTab(QWidget):
         """运行时 True=锁定,所有参数控件禁用;False=解锁。"""
         controls = [
             self.model_combo, self.conf_slider, self.device_combo,
+            self.mode_combo,
             self.btn_select_area, self.btn_reset_area,
+            self.window_combo, self.btn_refresh_windows,
+            self.btn_pick_window_region, self.btn_reset_window_region,
             self.start_hotkey_edit, self.stop_hotkey_edit,
             self.prepare_spin, self.pre_action_edit,
             self.cast_edit, self.wait_land_spin, self.detect_timeout_spin,

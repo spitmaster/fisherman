@@ -20,7 +20,7 @@
 
 | 分支 | 当前 M | Milestone 文件 | Todo 文件 |
 |------|--------|----------------|-----------|
-| `20260204` | M2 recognition 多目标识别策略与健壮性 | [milestones/20260204.md](./milestones/20260204.md) | [todo/20260204.md](./todo/20260204.md) |
+| `20260204` | M7 钓鱼后台模式(M6 独立 exe 待干净 Windows E2E) | [milestones/20260204.md](./milestones/20260204.md) | [todo/20260204.md](./todo/20260204.md) |
 
 ---
 

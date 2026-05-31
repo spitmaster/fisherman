@@ -6,8 +6,8 @@ library_manager 等一并拖入 standalone exe 包,徒增体积且违反"只挂 
 的极简入口设计。把这两个常量挪到本文件,FishingTab 改 import 此处,
 ImageLibraryTab 也能反过来 import(常量在更底层)。
 
-模型路径解析:standalone 模式下走 BUNDLED_MODEL_PATH 函数,定位:
-  - PyInstaller onedir:`<exe同目录>/good_models/wow_fish.pt`
+模型路径解析:standalone 模式下走 resolve_bundled_model_path 函数,定位:
+  - PyInstaller 6.x onedir:`<exe同目录>/_internal/good_models/wow_fish.pt`
   - 开发环境:`<项目根>/good_models/wow_fish.pt`
 """
 

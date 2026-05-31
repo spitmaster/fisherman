@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QCloseEvent
+from PyQt5.QtWidgets import QAction
 
 from global_support.task_scheduler import task_scheduler
 from recognition.screen_recognition import recognition_manager
@@ -136,6 +137,11 @@ class MainWindow(QMainWindow):
         # 帮助菜单
         help_menu = menubar.addMenu("帮助")
 
+        # 后台 IO 测试(验证窗口捕获 / 投键 / 投右键 的可行性)
+        bg_io_action = QAction("后台 IO 测试…", self)
+        bg_io_action.triggered.connect(self.open_background_io_test)
+        help_menu.addAction(bg_io_action)
+
     def create_status_bar(self):
         """创建状态栏"""
         self.statusBar().showMessage("准备就绪")
@@ -179,6 +185,19 @@ class MainWindow(QMainWindow):
             logger.error(f"打开日志查看器失败: {str(e)}")
             from PyQt5.QtWidgets import QMessageBox
             QMessageBox.critical(self, "错误", f"打开日志查看器失败: {str(e)}")
+
+    def open_background_io_test(self):
+        """打开后台 IO 测试对话框"""
+        try:
+            from gui.background_io_test_dialog import BackgroundIoTestDialog
+
+            dialog = BackgroundIoTestDialog(self)
+            dialog.exec_()
+
+        except Exception as e:
+            logger.error(f"打开后台 IO 测试失败: {str(e)}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "错误", f"打开后台 IO 测试失败: {str(e)}")
 
     def closeEvent(self, event: QCloseEvent):
         """关闭事件处理"""

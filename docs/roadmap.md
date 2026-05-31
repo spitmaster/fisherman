@@ -14,18 +14,26 @@
 
 ## 进行中
 
-### M6 钓鱼独立 exe 打包 🚧 设计阶段(2026-05-25 启动)
+### M7 钓鱼后台模式 🚧 设计阶段(2026-05-31 启动)
 
-**背景**:M5 完结后钓鱼功能稳定,用户希望把这一个 Tab 单独打包成 exe 文件夹分发给朋友(不需要装 Python / 训练环境)。复用 FishingTab + FishingLoop,新建极简入口 + PyInstaller onedir 配置。
+**背景**:M5 前台钓鱼要求游戏常驻前台、占用鼠标键盘,用户无法同时用电脑。M7 给 FishingTab 加「后台模式」:按窗口句柄 `PrintWindow` 抓帧 + `PostMessage` 投键投右键,游戏可后台 / 被遮挡,真实光标不动,挂机同时电脑自由用。可行性已 E2E 验证通过。
+
+**设计落点**:SPEC [§2.16 BackgroundFishing](./SPEC.md#216-钓鱼后台模式backgroundfishing--待开发m7) + [§5.5d window_io](./SPEC.md#55d-钓鱼后台模式-io-window_io)。
+**详情**:[milestones/20260204.md#m7--钓鱼后台模式--设计阶段](./milestones/20260204.md)。
+
+- `recognition/window_io.py` ctypes 后端(零新依赖,win32-only)— 已落
+- 检测范围 = 窗口内可框选子区域(D2);同步进独立 exe(D3)
+- 前台模式保留共存,默认前台,向后兼容
+- 后台拾取经 PostMessage 不动真实光标 → 鼠标键盘自由(核心价值)
+
+### M6 钓鱼独立 exe 打包 🚧 编码完成,待干净 Windows E2E(2026-05-25 启动)
+
+**背景**:把钓鱼 Tab 单独打包成 exe 文件夹分发给朋友(免装 Python)。复用 FishingTab + FishingLoop,极简入口 + PyInstaller onedir。编码完成(commit `d0482ee`),唯一剩余:无 Python 的干净 Windows 机器 E2E。
 
 **设计落点**:SPEC [§2.15 StandaloneFishing](./SPEC.md#215-钓鱼独立-exe-打包standalonefishing--待开发m6)。
 **详情**:[milestones/20260204.md#m6--钓鱼独立-exe-打包--设计阶段](./milestones/20260204.md)。
 
-- 模型固定 `good_models/wow_fish.pt`,不读 DB,不允许外挂
-- 保留位移区域选择(`gui/screen_area_selector.py`)
-- PyInstaller onedir 模式 + zip 分发(冷启动 2-3s,杀软误报少)
-- exe 名 `fisherman_fishing.exe`
-- 暂用默认图标 / 无启动闪屏
+- 模型固定 `good_models/wow_fish.pt`,不读 DB;onedir + zip 分发;exe 名 `fisherman_fishing.exe`
 - 干净 Windows 实测通过 → 完结
 
 ---

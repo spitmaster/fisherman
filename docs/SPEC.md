@@ -357,6 +357,7 @@
 - F2.15.6 **目录结构**:`dist/fisherman_fishing/` 内含 `fisherman_fishing.exe` + 几百个 dll/pyd + `good_models/wow_fish.pt`。整体大小目标 < 1 GB
 - F2.15.7 **构建脚本** `build_standalone.bat`:封装 `uv run pyinstaller fishing_standalone.spec --noconfirm`,清理上次 `build/` + `dist/`
 - F2.15.8 **README** `docs/standalone-build.md`:写清楚如何构建 / 如何分发 / 用户使用注意(F11/F12 不冲突 / 副屏游戏要选区域 / Windows Defender 误报对策)
+- F2.15.9 **后台模式随包**(M7,D3 用户拍板=同步进 exe):后台钓鱼模式([§2.16](#216-钓鱼后台模式backgroundfishing--待开发m7))经共享的 FishingTab 自动进入独立 exe。打包要点:spec 的 `excludes` **不得**误删 `recognition.window_io`(纯 ctypes + numpy)与 `gui.window_region_selector`(PyQt5);二者无额外依赖,正常被 FishingTab import 链带入
 
 **验收标准**:
 
@@ -382,6 +383,58 @@
 - [x] 不变量 6(CPU 推理):排除 `torch.cuda` 相关二进制(PyTorch CPU wheel 本来就不带 CUDA)
 - [x] 不变量 7(logging 优先):新代码全 logging
 - [x] 不变量 2(UI 线程安全):打包不改变线程模型,沿用 FishingTab 现有信号槽
+
+### 2.16 钓鱼后台模式(BackgroundFishing)— ⏳ 待开发(M7)
+
+**作为** WoW 玩家,**我希望** 钓鱼时游戏可以切到后台 / 被其他窗口遮挡,**以便** 挂机的同时用电脑做别的事,鼠标键盘不被占用。
+
+**整体设计**:给 [§2.14 FishingTab](#214-钓鱼标签页fishingtab--已完成m5) 增加「操作模式」开关——前台(屏幕)模式 = M5 现状不变;后台(窗口)模式 = 按选定游戏窗口句柄抓帧 + PostMessage 投递键鼠,全程**不抢焦点、不动真实光标**。底层走 `recognition/window_io.py`(ctypes 直调 user32/gdi32,**零新依赖**,win32-only,非 win32 平台降级为空实现)。
+
+**前后台模式对照**:
+
+| 维度 | 前台模式(M5 现状) | 后台模式(M7 新增) |
+|------|------|------|
+| 捕获 | mss 屏幕区域(全屏 / 选区) | `window_io.capture_window(hwnd)`(PrintWindow,被遮挡也抓真实画面) |
+| 键盘 | `pyautogui.press` | `window_io.post_key(hwnd, key)`(PostMessage) |
+| 右键拾取 | `pyautogui.rightClick(屏幕绝对)` | `window_io.post_right_click(hwnd, 客户区)`(PostMessage) |
+| 坐标系 | 屏幕绝对坐标 | 窗口客户区相对坐标 |
+| 检测范围 | 全屏 / 屏幕选区 | 整个客户区 / 窗口内框选子区域 |
+| 占用 | 游戏必须前台,鼠标被占用 | 游戏可后台,鼠标键盘自由 |
+
+**功能点**:
+
+- F2.16.1 **操作模式选择**:加「操作模式:前台(屏幕)/ 后台(窗口)」切换,默认**前台**(向后兼容);运行时锁定不可改
+- F2.16.2 **游戏窗口选择**:后台模式显示「游戏窗口 [▼] [🔄刷新]」,下拉来自 `window_io.enum_windows()`(可见且有标题的顶层窗口),自动优先选中含「魔兽 / wow / warcraft」者;**存窗口标题**而非裸 hwnd —— 句柄随游戏重启变化,运行时按标题 `find_window()` 重新解析
+- F2.16.3 **窗口内检测区域**(D2 用户拍板 = 可框选子区域):后台模式显示「检测区域 [窗口内框选] [整窗]」。框选走新对话框 `gui/window_region_selector.py`:抓一帧窗口画面 → 用户在画面上橡皮筋框矩形 → 返回**客户区相对坐标** (x,y,w,h);默认整窗。子区域用于减少误触发 + 缩小 YOLO 输入省 CPU
+- F2.16.4 **抓帧后端切换**:窗口模式下 `ScreenRecognition` 捕获走 `window_io.capture_window(hwnd)`,设了子区域则裁剪;返回 BGR 与现状一致,下游推理 / 预览 / 位移检测全部复用,无感知
+- F2.16.5 **后台投键**:`FishingLoop._press_key` 后台模式走 `window_io.post_key(hwnd, key)`;前台仍 `pyautogui.press`
+- F2.16.6 **后台右键拾取**:`FishingLoop._do_pick_up` 后台模式走 `window_io.post_right_click(hwnd, cx, cy)`,坐标 = detection.center(子区域局部)+ 子区域偏移 = 客户区坐标(无标题栏偏移,见 [§5.5d](#55d-钓鱼后台模式-io-window_io));前台仍 `pyautogui.rightClick(屏幕绝对)`
+- F2.16.7 **窗口失效处理**:运行中按标题解析不到 hwnd 或 `IsWindow` 为假(游戏关闭 / 重启)→ `on_error` 报「游戏窗口丢失」并停止循环,不静默空转
+- F2.16.8 **实时预览**:后台模式预览显示抓到的窗口画面(被遮挡也是真实游戏画面),管线复用 [§2.14 F2.14.15](#214-钓鱼标签页fishingtab--已完成m5)
+- F2.16.9 **鼠标自由**:后台右键经 PostMessage 投递,**不移动真实光标**,用户可同时操作电脑(本特性核心价值)
+
+**已知边界**:
+
+- 独占全屏 DX 游戏 PrintWindow 通常黑屏 → 需游戏切「窗口」/「窗口化全屏(无边框)」;UI 给提示
+- 游戏后台会降帧甚至停渲 → WoW 需 `/console maxfpsbk 30` 保持后台出帧;UI / 文档提示
+- win32-only;`window_io.is_supported()` 为假时禁用后台模式
+
+**验收标准**:
+
+- [ ] 后台模式选中 WoW 窗口,游戏切后台 / 被遮挡,预览仍显示真实游戏画面
+- [ ] F11 启动、游戏在后台:抛竿(post_key)→ 位移检测 → 右键拾取(post_right_click)整套闭环成功
+- [ ] 拾取时真实鼠标不动,用户可同时操作其他程序
+- [ ] 窗口内框选子区域后,检测只在子区域、拾取落点正确(坐标对齐无竖直偏移)
+- [ ] 游戏关闭后报「窗口丢失」并停止,无残留线程
+- [ ] 前台模式行为与 M5 完全一致(无回归)
+
+**架构不变量校验**:
+
+- [x] 不变量 2(UI 线程安全):沿用 FishingTab 信号槽;window_io 调用不跨线程碰 QWidget
+- [x] 不变量 6(CPU 推理):不涉及设备
+- [x] 不变量 7(logging 优先):新代码全 logging
+- [x] 不变量 8(opencv-headless):window_io 仅 numpy + ctypes,不引入 opencv-python
+- [x] 不变量 5(uv.lock):零新依赖,不动锁文件
 
 ---
 
@@ -736,6 +789,25 @@ STOPPING      接收到 stop_flag,清理 tracker / recognition
 - [x] 不变量 6(设备显式化):钓鱼 Tab UI 暴露设备下拉,透传给 `ScreenRecognition`
 - [x] 不变量 7(logging 优先):新代码全部走 logging,不使用 print
 
+### 5.5d 钓鱼后台模式 IO（window_io）
+
+文件:`recognition/window_io.py`(M7 新增,win32-only,ctypes 直调 user32/gdi32,**零新依赖**;非 win32 平台导出空实现,`is_supported()` 为假)。
+
+**捕获(`capture_window`)**:`PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT)` 让窗口自渲染一帧,与 z 序无关,被遮挡 / 部分最小化也能抓真实画面。**坐标对齐关键**:PrintWindow 按**窗口**原点渲染(含标题栏 / 边框),所以按整窗尺寸抓帧后,用 `ClientToScreen` 算出客户区相对窗口的偏移,裁剪出**纯客户区**;返回图 (0,0) == 客户区 (0,0),与 PostMessage 的客户区坐标严格对齐——否则竖直方向会差一个标题栏高度(M7 调试期实测踩坑)。返回 BGR ndarray,与 mss 路径同格式。
+
+**输入**:
+
+- `post_key(hwnd, key)`:`PostMessage(WM_KEYDOWN/UP)`,lParam 含 scancode(部分游戏校验);key 为单字符,经 `VkKeyScanW` + `MapVirtualKeyW` 解析 vk / 扫描码
+- `post_right_click` / `post_left_click(hwnd, x, y)`:`WM_MOUSEMOVE` → `WM_xBUTTONDOWN(MK_x)` → `WM_xBUTTONUP`,lParam = 客户区 (x, y)
+- 三者均**不抢焦点、不动真实光标**——这是后台模式「鼠标键盘自由」的来源
+
+**坐标链(与前台对称)**:
+
+- 后台:`detection.center`(在「喂给 YOLO 的帧」坐标系内 = 整窗客户区,或子区域裁剪) → + 子区域偏移(整窗则偏移 0) → 客户区坐标 → `post_right_click`
+- 前台:`detection.center`(屏幕选区局部) → + `monitor_area` 屏幕偏移 → 屏幕绝对 → `pyautogui.rightClick`
+
+**窗口句柄稳定性**:hwnd 随游戏重启变化,故 UI 存窗口**标题**,运行时用 `find_window(title)` 解析;解析不到 → 停循环报错(F2.16.7)。
+
 ### 5.6 关键目录结构
 
 ```
@@ -976,6 +1048,7 @@ MainWindow.closeEvent:
 
 | 日期 | 版本 | 改动 |
 |------|------|------|
+| 2026-05-31 | v1.7 | M7 🚧 启动(设计阶段):新增 §2.16 BackgroundFishing(钓鱼后台模式)+ §5.5d window_io IO 后端 + 坐标链。FishingTab 加前台/后台操作模式开关:后台模式经 `recognition/window_io.py`(PrintWindow 抓帧 + PostMessage 投键投右键,零新依赖,win32-only)实现游戏后台 / 被遮挡也能钓鱼且不占鼠标。2 项决策拍板:检测范围 = 窗口内可框选子区域(D2)、同步进独立 exe(D3,§2.15 加 F2.15.9)。可行性已用 `帮助 → 后台 IO 测试` 面板 E2E 验证(抓帧 / 投键 / 投右键三项全过,坐标对齐 bug 已修) |
 | 2026-05-25 | v1.6 | M6 🚧 启动(设计阶段):新增 §2.15 StandaloneFishing(钓鱼独立 exe 打包)。Scope 5 项 S1-S5 拍板:模型固定 `wow_fish.pt` / 保留区域选择 / onedir / `fisherman_fishing.exe` / 默认图标无闪屏。等用户审过设计后开工 `fishing_main.py` + `fishing_standalone.spec` |
 | 2026-05-25 | v1.5 | M5 ✅ 完结:`fishing/fishing_loop.py` + `gui/tabs/fishing_tab.py` 落地并实测通过;默认值同步实测最优(预备 5s / 抛竿 `-` / 抛竿后 3s / 检测超时 17s);修双屏 click 偏移 bug(`+ monitor_area offset`);右下日志窗换为实时预览(识别管线常驻全程,后台线程图像处理 + 主线程 setPixmap);§2.14 ⏳ → ✅、§6.1 fishing 0% → ~95% |
 | 2026-05-25 | v1.4 | M5 设计:新增 §2.14 FishingTab(死循环钓鱼:预备 → 前准备 → 抛竿 → 等待 → 位移检测 → 拾取 → 后处理)、§5.5c FishingLoop 状态机与线程模型、§4.1 Tab 列表加 FishingTab、§6.1 完成度加 fishing 行 |

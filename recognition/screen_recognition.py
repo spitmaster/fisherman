@@ -26,6 +26,8 @@ import pyautogui
 from datetime import datetime, timedelta
 from ultralytics import YOLO
 
+from recognition import window_io
+
 # 日志配置
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,14 @@ class ScreenRecognition:
         # 监控区域
         self.monitor_area = None  # (x, y, width, height)
         self.use_full_screen = True
+
+        # 捕获模式(M7 后台钓鱼):
+        #   "screen" — mss 抓屏幕区域(现状,要求目标在前台)
+        #   "window" — window_io.capture_window(hwnd) 抓指定窗口(被遮挡也行)
+        # window 模式坐标系是窗口客户区相对坐标;window_region 为客户区内的子区域裁剪
+        self.capture_mode = "screen"
+        self.hwnd = 0
+        self.window_region = None  # (x, y, w, h) 客户区相对,None=整个客户区
         
         # 结果回调函数
         self.on_recognition_result = None
@@ -109,9 +119,23 @@ class ScreenRecognition:
         
     def use_full_screen_monitor(self):
         """使用全屏监控"""
+        self.capture_mode = "screen"
         self.use_full_screen = True
         self.monitor_area = None
         logger.info("监控区域设置为: 全屏")
+
+    def set_window_capture(self, hwnd, region=None):
+        """切到窗口捕获模式(M7 后台钓鱼)。
+
+        Args:
+            hwnd: 目标窗口句柄
+            region: (x, y, w, h) 客户区相对子区域,None=整个客户区
+        """
+        self.capture_mode = "window"
+        self.hwnd = hwnd
+        self.window_region = region
+        self.use_full_screen = False
+        logger.info("捕获切到窗口模式: hwnd=0x%08X region=%s", hwnd, region)
         
     def start_recognition(self):
         """开始识别任务"""
@@ -187,8 +211,9 @@ class ScreenRecognition:
         每一轮:截图 → 写入共享 _latest_frame(供推理线程消费)→ emit on_frame_result(叠加推理线程
         最近一次的检测框,可能略滞后但不影响预览顺滑)。
         """
-        # mss 必须在当前线程实例化(threading.local 限制)
-        self.sct = mss.mss()
+        # mss 必须在当前线程实例化(threading.local 限制);window 模式不用 mss
+        if self.capture_mode == "screen":
+            self.sct = mss.mss()
         target_interval = 1.0 / max(self.preview_fps_cap, 1)
         capture_start = datetime.now()
         capture_count = 0
@@ -285,6 +310,10 @@ class ScreenRecognition:
         Returns:
             屏幕截图的numpy数组，BGR格式
         """
+        # 窗口模式(M7):走 PrintWindow,返回纯客户区 BGR(已做标题栏裁剪对齐)
+        if self.capture_mode == "window":
+            return self._capture_window_frame()
+
         try:
             if self.use_full_screen:
                 # 全屏捕获
@@ -308,7 +337,34 @@ class ScreenRecognition:
         except Exception as e:
             logger.error(f"屏幕捕获出错: {str(e)}")
             return None
-            
+
+    def _capture_window_frame(self):
+        """窗口模式捕获(M7)。返回纯客户区 BGR;设了 window_region 则裁剪出子区域。
+
+        坐标约定:返回图 (0,0) == 客户区 (0,0)(或子区域左上角);
+        下游 detection.center 因此是客户区(或子区域)相对坐标,
+        FishingLoop 后台拾取时 + 子区域偏移即得客户区坐标,直接喂 post_right_click。
+        """
+        try:
+            frame = window_io.capture_window(self.hwnd)
+            if frame is None:
+                return None
+            if self.window_region is not None:
+                x, y, w, h = self.window_region
+                H, W = frame.shape[:2]
+                x0 = max(0, int(x))
+                y0 = max(0, int(y))
+                x1 = min(W, x0 + int(w))
+                y1 = min(H, y0 + int(h))
+                if x1 <= x0 or y1 <= y0:
+                    logger.warning("window_region 越界或为空: %s (帧 %dx%d)", self.window_region, W, H)
+                    return None
+                frame = frame[y0:y1, x0:x1]
+            return frame
+        except Exception as e:
+            logger.error(f"窗口捕获出错: {str(e)}")
+            return None
+
     def _detect_objects(self, image):
         """使用YOLO模型检测目标
         
